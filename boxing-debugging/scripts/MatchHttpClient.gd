@@ -14,17 +14,21 @@ const BASE_URL := "http://localhost:8080"
 var _http: HTTPRequest
 
 func _ready() -> void:
-	# TODO: instantiate HTTPRequest, add_child it, connect request_completed signal
-	pass
+	_http = HTTPRequest.new()
+	add_child(_http)
+	_http.request_completed.connect(_on_request_completed)
 
 func create_debug_match() -> void:
-	# TODO: call _http.request() with POST to BASE_URL + "/api/match?debug=true"
-	# No body needed — the endpoint reads debug from the query param
-	pass
+	_http.request(BASE_URL + "/api/match?debug=true", [], HTTPClient.METHOD_POST, "")
 
 func _on_request_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
-	# TODO: check result == HTTPRequest.RESULT_SUCCESS and response_code == 200
-	# Parse body as JSON, store match_id and ws_url into MatchState
-	# Call WebSocketClient.connect_to_match(MatchState.ws_url)
-	# Emit match_created or match_creation_failed
-	pass
+	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
+		match_creation_failed.emit("HTTP error: %d" % response_code)
+		return
+	var json := JSON.new()
+	json.parse(body.get_string_from_utf8())
+	var data: Dictionary = json.get_data()
+	MatchState.match_id = data["matchId"]
+	MatchState.ws_url = data["wsUrl"]
+	WebSocketClient.connect_to_match(MatchState.ws_url)
+	match_created.emit()
