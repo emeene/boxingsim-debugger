@@ -1,7 +1,7 @@
 extends Node2D
 
-@onready var f1: Node2D = $BlueFighter
-@onready var f2: Node2D = $RedFighter
+@onready var f1: Node2D = $BlueFighter/Fighter
+@onready var f2: Node2D = $RedFighter/Fighter
 
 const RING_SIZE := 600.0
 
