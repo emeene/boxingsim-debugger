@@ -24,8 +24,6 @@ func connect_to_match(url: String) -> void:
 
 
 func send_command(command: String) -> void:
-	# TODO: send {"command": command} as a text frame upstream
-	# Only valid when _state == WebSocketPeer.STATE_OPEN
 	if _state == WebSocketPeer.STATE_OPEN:
 		_peer.send_text('{"command":"' + command + '"}')
 	return
