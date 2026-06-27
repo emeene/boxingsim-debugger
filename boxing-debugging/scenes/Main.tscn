@@ -1,0 +1,9 @@
+[gd_scene format=3 uid="uid://cx0tl5tbwiile"]
+
+[ext_resource type="Script" uid="uid://utvtd50wshcj" path="res://scenes/Main.gd" id="1_rvslj"]
+[ext_resource type="PackedScene" uid="uid://d2dhhbrg1dilb" path="res://scenes/Ring.tscn" id="2_0bbpv"]
+
+[node name="Main" type="Node2D" unique_id=1190041581]
+script = ExtResource("1_rvslj")
+
+[node name="Ring" parent="." unique_id=2104405360 instance=ExtResource("2_0bbpv")]

@@ -1,0 +1,17 @@
+[gd_scene format=3 uid="uid://d2dhhbrg1dilb"]
+
+[ext_resource type="Script" uid="uid://c4stylh15bhq5" path="res://scenes/Ring.gd" id="1_vano4"]
+[ext_resource type="PackedScene" uid="uid://cjg5hx17fieeb" path="res://scenes/Fighter.tscn" id="2_jxec1"]
+
+[node name="Ring" type="Node2D" unique_id=2104405360]
+script = ExtResource("1_vano4")
+
+[node name="BlueFighter" type="Node2D" parent="." unique_id=829295063]
+
+[node name="Fighter" parent="BlueFighter" unique_id=1088388510 instance=ExtResource("2_jxec1")]
+color = Color(0.1882353, 0.11372549, 0.9607843, 1)
+
+[node name="RedFighter" type="Node2D" parent="." unique_id=1478143930]
+
+[node name="Fighter" parent="RedFighter" unique_id=1245761629 instance=ExtResource("2_jxec1")]
+color = Color(0.8392157, 0.12156863, 0.13333334, 1)
