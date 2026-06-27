@@ -11,23 +11,26 @@ config_version=5
 [application]
 
 config/name="BoxingDebugging"
+run/main_scene="uid://cx0tl5tbwiile"
 config/features=PackedStringArray("4.7", "Mobile")
 config/icon="res://icon.svg"
-
-[display]
-
-window/stretch/mode="canvas_items"
-window/stretch/aspect="expand"
-
-[physics]
-
-3d/physics_engine="Jolt Physics"
 
 [autoload]
 
 MatchState="*res://scripts/MatchState.gd"
 WebSocketClient="*res://scripts/WebSocketClient.gd"
 MatchHttpClient="*res://scripts/MatchHttpClient.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[physics]
+
+3d/physics_engine="Jolt Physics"
 
 [rendering]
 
