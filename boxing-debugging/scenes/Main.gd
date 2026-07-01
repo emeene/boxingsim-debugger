@@ -2,10 +2,27 @@ extends Node2D
 
 @onready var ring: Node2D = $Ring
 
+var _ended_label: Label
+
 func _ready() -> void:
 	WebSocketClient.tick_received.connect(_on_tick)
 	MatchHttpClient.create_debug_match()
-	
+	# Built in code so no .tscn edit is needed — shown once the payload reports ENDED
+	_ended_label = Label.new()
+	_ended_label.add_theme_font_size_override("font_size", 40)
+	_ended_label.position = Vector2(440.0, 20.0)
+	_ended_label.visible = false
+	add_child(_ended_label)
+
 # Every time WebSocketClient emits tick_received, _on_tick gets called with the payload.
 func _on_tick(payload: Dictionary) -> void:
 	ring.update(payload)
+	if payload.get("status", "") == "ENDED":
+		_ended_label.text = _result_text(payload.get("winner"))
+		_ended_label.visible = true
+
+func _result_text(winner) -> String:
+	match winner:
+		"f1": return "KO — BLUE WINS"
+		"f2": return "KO — RED WINS"
+		_:    return "DOUBLE KO — DRAW"
