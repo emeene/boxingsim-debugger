@@ -30,9 +30,13 @@ func _on_tick(payload: Dictionary) -> void:
 		_log_lines.resize(MAX_LOG_LINES)
 	tick_log.text = "\n".join(_log_lines)
 
-# Action, annotated with the punch verdict on the tick it resolved (offense is null otherwise)
+# Committed action + phase, annotated with the punch verdict on the tick it resolved
+# (offense is null otherwise — with the phase machine that is the IMPACT tick)
 func _fighter_entry(f: Dictionary) -> String:
 	var entry: String = str(f["action"])
+	var phase = f.get("phase", "READY")
+	if phase != "READY":
+		entry += " (%s)" % phase
 	var offense = f.get("offense")
 	if offense != null:
 		if offense["landed"]:
