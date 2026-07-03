@@ -5,8 +5,8 @@ const MAX_LOG_LINES := 300
 @onready var step_btn:    Button        = $VBoxContainer/HBoxContainer/StepButton
 @onready var play_btn:    Button        = $VBoxContainer/HBoxContainer/PlayButton
 @onready var pause_btn:   Button        = $VBoxContainer/HBoxContainer/PauseButton
-@onready var blue_scores: RichTextLabel = $VBoxContainer/BlueScores
-@onready var red_scores:  RichTextLabel = $VBoxContainer/RedScores
+@onready var blue_scores: RichTextLabel = $VBoxContainer/ScoresRow/BlueColumn/BlueScores
+@onready var red_scores:  RichTextLabel = $VBoxContainer/ScoresRow/RedColumn/RedScores
 @onready var tick_log:    RichTextLabel = $VBoxContainer/TickLog
 
 # Newest tick first — the log reads as a stack, capped so it can't grow unbounded

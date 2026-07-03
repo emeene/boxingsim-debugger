@@ -11,7 +11,8 @@ script = ExtResource("1_c2ndm")
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 940.0
+offset_left = 840.0
+offset_right = -100.0
 grow_horizontal = 2
 grow_vertical = 2
 
@@ -19,26 +20,39 @@ grow_vertical = 2
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 940.0
-offset_right = -40.0
+offset_left = 880.0
+offset_right = -100.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="BlueFighter" type="Label" parent="VBoxContainer" unique_id=1982777138]
+[node name="ScoresRow" type="HBoxContainer" parent="VBoxContainer" unique_id=108013605]
+layout_mode = 2
+
+[node name="BlueColumn" type="VBoxContainer" parent="VBoxContainer/ScoresRow" unique_id=845104440]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="BlueFighter" type="Label" parent="VBoxContainer/ScoresRow/BlueColumn" unique_id=1982777138]
 layout_mode = 2
 text = "Blue Fighter"
 
-[node name="BlueScores" type="RichTextLabel" parent="VBoxContainer" unique_id=1450287301]
-custom_minimum_size = Vector2(0, 200)
+[node name="BlueScores" type="RichTextLabel" parent="VBoxContainer/ScoresRow/BlueColumn" unique_id=1450287301]
+custom_minimum_size = Vector2(0, 260)
 layout_mode = 2
+size_flags_vertical = 3
 
-[node name="RedFighter" type="Label" parent="VBoxContainer" unique_id=1357058581]
+[node name="RedColumn" type="VBoxContainer" parent="VBoxContainer/ScoresRow" unique_id=36829463]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="RedFighter" type="Label" parent="VBoxContainer/ScoresRow/RedColumn" unique_id=1357058581]
 layout_mode = 2
 text = "Red Fighter"
 
-[node name="RedScores" type="RichTextLabel" parent="VBoxContainer" unique_id=429215310]
-custom_minimum_size = Vector2(0, 200)
+[node name="RedScores" type="RichTextLabel" parent="VBoxContainer/ScoresRow/RedColumn" unique_id=429215310]
+custom_minimum_size = Vector2(0, 260)
 layout_mode = 2
+size_flags_vertical = 3
 
 [node name="Log" type="Label" parent="VBoxContainer" unique_id=1818071636]
 layout_mode = 2
