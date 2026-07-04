@@ -64,6 +64,9 @@ func _fighter_entry(f: Dictionary) -> String:
 	if offense != null:
 		if offense["landed"]:
 			entry += " — LANDED %.2f dmg" % offense["damage"]
+			# .get() so an older backend payload without the field still parses
+			if offense.get("knockdown", false):
+				entry += " — KNOCKDOWN"
 		else:
 			entry += " — MISSED"
 	return entry
