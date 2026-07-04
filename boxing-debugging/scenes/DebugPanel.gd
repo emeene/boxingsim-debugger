@@ -31,7 +31,9 @@ func _ready() -> void:
 func _on_tick(payload: Dictionary) -> void:
 	_count_punches("f1", payload["f1"])
 	_count_punches("f2", payload["f2"])
-	_punch_stats_label.text = "BLUE %d/%d — RED %d/%d (landed/thrown)" % [
+	# .get() defaults so an older backend payload without round fields still parses
+	_punch_stats_label.text = "R%s [%s]  BLUE %d/%d — RED %d/%d (landed/thrown)" % [
+		str(payload.get("roundNumber", 0)), str(payload.get("status", "?")),
 		_punch_counts["f1"][1], _punch_counts["f1"][0],
 		_punch_counts["f2"][1], _punch_counts["f2"][0]
 	]
