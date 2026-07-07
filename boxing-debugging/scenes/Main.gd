@@ -18,11 +18,28 @@ func _ready() -> void:
 func _on_tick(payload: Dictionary) -> void:
 	ring.update(payload)
 	if payload.get("status", "") == "ENDED":
-		_ended_label.text = _result_text(payload.get("winner"))
+		_ended_label.text = _result_text(payload)
 		_ended_label.visible = true
 
-func _result_text(winner) -> String:
-	match winner:
-		"f1": return "KO — BLUE WINS"
-		"f2": return "KO — RED WINS"
-		_:    return "DOUBLE KO — DRAW"
+# The ring announcer's line: how the fight ended and for whom. The method field says KO/TKO/
+# DECISION/DRAW; a decision also carries its type (unanimous/majority/split) in the decision
+# object. .get() defaults so an older backend payload without these fields still shows the
+# old KO-only banner.
+func _result_text(payload: Dictionary) -> String:
+	var winner = payload.get("winner")
+	var who := "BLUE WINS" if winner == "f1" else "RED WINS"
+	match payload.get("method"):
+		"KO":
+			return ("KO — " + who) if winner != null else "DOUBLE KO — DRAW"
+		"TKO":
+			return "TKO — " + who
+		"DECISION":
+			var type: String = str(payload["decision"]["type"]) # UNANIMOUS / MAJORITY / SPLIT
+			return "%s DECISION — %s" % [type, who]
+		"DRAW":
+			return "DRAW — ON THE CARDS"
+		_: # older backend payload without the method field
+			match winner:
+				"f1": return "KO — BLUE WINS"
+				"f2": return "KO — RED WINS"
+				_:    return "DOUBLE KO — DRAW"

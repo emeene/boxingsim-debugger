@@ -17,6 +17,10 @@ var _log_lines: PackedStringArray = []
 var _punch_counts := {"f1": [0, 0], "f2": [0, 0]}
 var _punch_stats_label: Label
 
+# The judges' cards are rendered once, on the ENDED payload — guarded in case the final
+# state ever gets delivered twice (e.g. a reconnect)
+var _cards_rendered := false
+
 func _ready() -> void:
 	step_btn.pressed.connect(func(): WebSocketClient.send_command("step"))
 	play_btn.pressed.connect(func(): WebSocketClient.send_command("play"))
@@ -44,6 +48,14 @@ func _on_tick(payload: Dictionary) -> void:
 		_fighter_entry(payload["f1"]),
 		_fighter_entry(payload["f2"])
 	])
+	# At the final bell the payload carries the three judges' cards (null on a stoppage —
+	# a KO needs no scorecard). Newest-first log, so the block lands on top of everything.
+	var decision = payload.get("decision")
+	if payload.get("status", "") == "ENDED" and decision != null and not _cards_rendered:
+		_cards_rendered = true
+		var block := _scorecard_lines(decision)
+		for i in range(block.size() - 1, -1, -1):
+			_log_lines.insert(0, block[i])
 	if _log_lines.size() > MAX_LOG_LINES:
 		_log_lines.resize(MAX_LOG_LINES)
 	tick_log.text = "\n".join(_log_lines)
@@ -77,3 +89,24 @@ func _update_scores(label: RichTextLabel, scores: Array) -> void:
 	label.clear()
 	for entry in scores:
 		label.append_text("%s: %.2f\n" % [entry["action"], entry["score"]])
+
+# One line per judge — total, who his card went to, then the round-by-round awards so the
+# verdict can be argued with (10-8 rounds are where the knockdowns were).
+func _scorecard_lines(decision: Dictionary) -> PackedStringArray:
+	var lines: PackedStringArray = ["=== JUDGES' CARDS (%s) ===" % str(decision["type"])]
+	var judge := 1
+	for card in decision["cards"]:
+		var rounds := ""
+		for r in card["rounds"]:
+			rounds += "%d-%d " % [r["f1"], r["f2"]]
+		lines.append("J%d: %d-%d %s | %s" % [
+			judge, card["f1Total"], card["f2Total"],
+			_card_leader(card["f1Total"], card["f2Total"]), rounds.strip_edges()
+		])
+		judge += 1
+	return lines
+
+func _card_leader(f1_total: int, f2_total: int) -> String:
+	if f1_total > f2_total: return "BLUE"
+	if f2_total > f1_total: return "RED"
+	return "EVEN"
