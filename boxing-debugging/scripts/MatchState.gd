@@ -6,8 +6,8 @@ var match_id: String = ""
 var ws_url: String = ""
 
 const RING_SCALE := 600.0 / 860.0
-const RING_OFFSET_X := (1280.0 - 600.0) / 2.0
-const RING_OFFSET_Y := (720.0 - 600.0) / 2.0
+const RING_OFFSET_X := ((1280.0 - 600.0) / 2.0) - 100
+const RING_OFFSET_Y := ((720.0 - 600.0) / 2.0) - 40
 
 func to_screen(backend_x: float, backend_y: float) -> Vector2:
 	return Vector2(
