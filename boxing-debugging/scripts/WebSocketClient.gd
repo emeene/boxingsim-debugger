@@ -23,9 +23,13 @@ func connect_to_match(url: String) -> void:
 	_peer.connect_to_url(url)
 
 
-func send_command(command: String) -> void:
+# Commands with a payload (like the speed multiplier) pass it as value; plain commands omit it.
+func send_command(command: String, value = null) -> void:
 	if _state == WebSocketPeer.STATE_OPEN:
-		_peer.send_text('{"command":"' + command + '"}')
+		var msg := {"command": command}
+		if value != null:
+			msg["value"] = value
+		_peer.send_text(JSON.stringify(msg))
 	return
 
 func _process(_delta: float) -> void:

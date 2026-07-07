@@ -25,6 +25,14 @@ func _ready() -> void:
 	step_btn.pressed.connect(func(): WebSocketClient.send_command("step"))
 	play_btn.pressed.connect(func(): WebSocketClient.send_command("play"))
 	pause_btn.pressed.connect(func(): WebSocketClient.send_command("pause"))
+	# Speed buttons, built in code so no .tscn edit is needed. Fast-forward only changes the
+	# tick interval — the fight itself is identical at any speed. ×8 makes a full 12-rounder
+	# (breaks included) a ~6-minute watch instead of ~47.
+	for mult in [1, 2, 4, 8]:
+		var b := Button.new()
+		b.text = "×%d" % mult
+		b.pressed.connect(func(): WebSocketClient.send_command("speed", mult))
+		$VBoxContainer/HBoxContainer.add_child(b)
 	WebSocketClient.tick_received.connect(_on_tick)
 	# Built in code so no .tscn edit is needed (same trick as Main's ended-label)
 	_punch_stats_label = Label.new()
