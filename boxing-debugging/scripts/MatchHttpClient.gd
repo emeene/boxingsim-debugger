@@ -18,8 +18,9 @@ func _ready() -> void:
 	add_child(_http)
 	_http.request_completed.connect(_on_request_completed)
 
-func create_debug_match(rounds: int = 12) -> void:
-	_http.request(BASE_URL + "/api/match?debug=true&rounds=%d" % rounds, [], HTTPClient.METHOD_POST, "")
+func create_debug_match(rounds: int = 12, tier1: String = "GOOD", tier2: String = "GOOD", weight_class: String = "MIDDLEWEIGHT") -> void:
+	var url := BASE_URL + "/api/match?debug=true&rounds=%d&tier1=%s&tier2=%s&weight=%s" % [rounds, tier1, tier2, weight_class]
+	_http.request(url, [], HTTPClient.METHOD_POST, "")
 
 func _on_request_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
 	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:

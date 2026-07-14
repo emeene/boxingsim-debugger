@@ -6,6 +6,8 @@
 
 [node name="Main" type="Node2D" unique_id=1190041581]
 script = ExtResource("1_rvslj")
+tier1 = "HALL_OF_FAMER"
+tier2 = "AMATEUR"
 
 [node name="Ring" parent="." unique_id=2104405360 instance=ExtResource("2_0bbpv")]
 

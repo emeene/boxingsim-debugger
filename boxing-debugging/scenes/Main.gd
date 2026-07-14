@@ -3,6 +3,11 @@ extends Node2D
 # The fight's scheduled distance. Editable on the Main node in the Godot inspector, so a
 # quick 4-rounder for a smoke test needs no code change.
 @export_range(1, 15) var rounds: int = 12
+# The matchup, off the calibration tier ladder (Phase 0 gate: distinct stat profiles must
+# be watchable). Blue = tier1, red = tier2 — pick e.g. ELITE vs PRO from the inspector.
+@export_enum("AMATEUR", "PRO", "GOOD", "ELITE", "WORLD_CLASS", "HALL_OF_FAMER") var tier1: String = "GOOD"
+@export_enum("AMATEUR", "PRO", "GOOD", "ELITE", "WORLD_CLASS", "HALL_OF_FAMER") var tier2: String = "GOOD"
+@export_enum("FLYWEIGHT", "BANTAMWEIGHT", "FEATHERWEIGHT", "LIGHTWEIGHT", "WELTERWEIGHT", "MIDDLEWEIGHT", "LIGHT_HEAVYWEIGHT", "HEAVYWEIGHT") var weight_class: String = "MIDDLEWEIGHT"
 
 @onready var ring: Node2D = $Ring
 
@@ -10,7 +15,7 @@ var _ended_label: Label
 
 func _ready() -> void:
 	WebSocketClient.tick_received.connect(_on_tick)
-	MatchHttpClient.create_debug_match(rounds)
+	MatchHttpClient.create_debug_match(rounds, tier1, tier2, weight_class)
 	# Built in code so no .tscn edit is needed — shown once the payload reports ENDED
 	_ended_label = Label.new()
 	_ended_label.add_theme_font_size_override("font_size", 40)

@@ -10,6 +10,7 @@ var _target_position: Vector2 = Vector2.ZERO
 var _health_fraction: float = 1.0
 var _stamina_fraction: float = 1.0
 var _phase: String = "READY"
+var _guard: String = ""
 
 func _draw() -> void:
 	# Phase tint (combat-timing Phase 1): yellow while a punch winds up (STARTUP),
@@ -19,6 +20,17 @@ func _draw() -> void:
 		"STARTUP":  draw_color = color.lerp(Color.YELLOW, 0.6)
 		"RECOVERY": draw_color = color.lerp(Color.DIM_GRAY, 0.6)
 	draw_circle(Vector2.ZERO, RADIUS, draw_color)
+	# Guard ring (combat-timing Phase 3, §4): a committed defense draws an outline —
+	# solid cyan for BLOCK, a side arc for a slip on the side the head moves to. Guards
+	# only appear during the rival's windup, so a flash of cyan against a yellow rival
+	# reads as "he saw it coming".
+	match _guard:
+		"BLOCK":
+			draw_arc(Vector2.ZERO, RADIUS + 3.0, 0.0, TAU, 32, Color.CYAN, 2.5)
+		"SLIP_LEFT":
+			draw_arc(Vector2.ZERO, RADIUS + 3.0, PI * 0.5, PI * 1.5, 16, Color.CYAN, 2.5)
+		"SLIP_RIGHT":
+			draw_arc(Vector2.ZERO, RADIUS + 3.0, -PI * 0.5, PI * 0.5, 16, Color.CYAN, 2.5)
 	# Health bar above the fighter: dark background, green→red fill as health drains
 	var bar_origin := Vector2(-BAR_WIDTH / 2.0, BAR_OFFSET_Y)
 	draw_rect(Rect2(bar_origin, Vector2(BAR_WIDTH, BAR_HEIGHT)), Color(0.15, 0.15, 0.15))
@@ -35,8 +47,9 @@ func _process(delta: float) -> void:
 	position = position.lerp(_target_position, delta / 0.1)
 	queue_redraw()
 
-func update_from_snapshot(x: float, y: float, health: float, stamina: float, phase: String) -> void:
+func update_from_snapshot(x: float, y: float, health: float, stamina: float, phase: String, guard = null) -> void:
 	_target_position = MatchState.to_screen(x, y)
 	_health_fraction = clampf(health / 100.0, 0.0, 1.0)
 	_stamina_fraction = clampf(stamina / 100.0, 0.0, 1.0)
 	_phase = phase
+	_guard = guard if guard != null else ""
