@@ -37,11 +37,19 @@ func _on_tick(payload: Dictionary) -> void:
 func _result_text(payload: Dictionary) -> String:
 	var winner = payload.get("winner")
 	var who := "BLUE WINS" if winner == "f1" else "RED WINS"
+	# The stoppage reason (hurt cycle §8) is the announcer's parenthetical: a counted-out
+	# KO reads differently from an attrition one, and a wave-off TKO differently from the
+	# three-knockdown rule. .get() default keeps older payloads on the bare method line.
+	var reason := ""
+	match payload.get("reason"):
+		"COUNT_OUT":        reason = " (counted out)"
+		"THREE_KNOCKDOWNS": reason = " (3 knockdowns)"
+		"UNANSWERED":       reason = " (unanswered punches)"
 	match payload.get("method"):
 		"KO":
-			return ("KO — " + who) if winner != null else "DOUBLE KO — DRAW"
+			return ("KO%s — %s" % [reason, who]) if winner != null else "DOUBLE KO — DRAW"
 		"TKO":
-			return "TKO — " + who
+			return "TKO%s — %s" % [reason, who]
 		"DECISION":
 			var type: String = str(payload["decision"]["type"]) # UNANIMOUS / MAJORITY / SPLIT
 			return "%s DECISION — %s" % [type, who]
