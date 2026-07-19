@@ -3,16 +3,13 @@
 [ext_resource type="Script" uid="uid://68r2e44ffjmx" path="res://scenes/DebugPanel.gd" id="1_c2ndm"]
 
 [node name="DebugPanel" type="CanvasLayer" unique_id=527552476]
-offset = Vector2(100, 0)
-transform = Transform2D(1, 0, 0, 1, 100, 0)
 script = ExtResource("1_c2ndm")
 
 [node name="Panel" type="Panel" parent="." unique_id=377508919]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 787.0
-offset_right = -100.0
+offset_left = 860.0
 grow_horizontal = 2
 grow_vertical = 2
 
@@ -20,13 +17,17 @@ grow_vertical = 2
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 880.0
-offset_right = -100.0
+offset_left = 872.0
+offset_top = 8.0
+offset_right = -12.0
+offset_bottom = -8.0
 grow_horizontal = 2
 grow_vertical = 2
 
 [node name="ScoresRow" type="HBoxContainer" parent="VBoxContainer" unique_id=108013605]
 layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 16
 
 [node name="BlueColumn" type="VBoxContainer" parent="VBoxContainer/ScoresRow" unique_id=845104440]
 layout_mode = 2
@@ -37,7 +38,7 @@ layout_mode = 2
 text = "Blue Fighter"
 
 [node name="BlueScores" type="RichTextLabel" parent="VBoxContainer/ScoresRow/BlueColumn" unique_id=1450287301]
-custom_minimum_size = Vector2(0, 260)
+custom_minimum_size = Vector2(0, 120)
 layout_mode = 2
 size_flags_vertical = 3
 
@@ -50,7 +51,7 @@ layout_mode = 2
 text = "Red Fighter"
 
 [node name="RedScores" type="RichTextLabel" parent="VBoxContainer/ScoresRow/RedColumn" unique_id=429215310]
-custom_minimum_size = Vector2(0, 260)
+custom_minimum_size = Vector2(0, 120)
 layout_mode = 2
 size_flags_vertical = 3
 

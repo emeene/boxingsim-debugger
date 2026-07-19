@@ -23,6 +23,13 @@ var _punch_log: RichTextLabel
 var _punch_counts := {"f1": [0, 0], "f2": [0, 0]}
 var _punch_stats_label: Label
 
+# Combo tracking (combat-timing §3): the payload's comboCount is the live chain depth —
+# 0 on single shots, 1 at the second punch of a 1-2. When it drops back to 0 during
+# active play, a chain of depth+1 punches just ended; the bell also resets it, so break
+# and ended ticks are ignored (a combo cancelled by the bell was never finished).
+var _combo_depth := {"f1": 0, "f2": 0}
+var _combo_counts := {"f1": 0, "f2": 0}
+
 # The judges' cards are rendered once, on the ENDED payload — guarded in case the final
 # state ever gets delivered twice (e.g. a reconnect)
 var _cards_rendered := false
@@ -42,15 +49,19 @@ func _ready() -> void:
 	WebSocketClient.tick_received.connect(_on_tick)
 	# Built in code so no .tscn edit is needed (same trick as Main's ended-label)
 	_punch_stats_label = Label.new()
-	_punch_stats_label.text = "BLUE 0/0 — RED 0/0 (landed/thrown)"
+	# Labels clip long text unless word-wrap is turned on
+	_punch_stats_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_punch_stats_label.text = "BLUE 0/0 — RED 0/0 (landed/thrown)\ncombos BLUE 0 — RED 0"
 	$VBoxContainer.add_child(_punch_stats_label)
 	$VBoxContainer.move_child(_punch_stats_label, 1) # right under the buttons
 	# Punch log, right under the tick log (built in code, same trick)
 	var punch_header := Label.new()
 	punch_header.text = "Punches"
+	# Fixed height on purpose: the score columns are the panel's only stretching part,
+	# so the button row always keeps its place at the bottom instead of being pushed
+	# off-screen when the window is short. Both logs scroll, they don't need to grow.
 	_punch_log = RichTextLabel.new()
 	_punch_log.custom_minimum_size = Vector2(0, 150)
-	_punch_log.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	$VBoxContainer.add_child(punch_header)
 	$VBoxContainer.add_child(_punch_log)
 	var after_tick_log := $VBoxContainer/TickLog.get_index() + 1
@@ -62,11 +73,15 @@ func _on_tick(payload: Dictionary) -> void:
 	_count_punches("f2", payload["f2"])
 	_log_punch(payload, "BLUE", payload["f1"])
 	_log_punch(payload, "RED",  payload["f2"])
-	# .get() defaults so an older backend payload without round fields still parses
-	_punch_stats_label.text = "R%s [%s]  BLUE %d/%d — RED %d/%d (landed/thrown)" % [
+	_track_combo("f1", "BLUE", payload)
+	_track_combo("f2", "RED",  payload)
+	# .get() defaults so an older backend payload without round fields still parses.
+	# Two lines on purpose: one long line does not fit the panel and gets clipped.
+	_punch_stats_label.text = "R%s [%s]  BLUE %d/%d — RED %d/%d (landed/thrown)\ncombos BLUE %d — RED %d" % [
 		str(payload.get("roundNumber", 0)), str(payload.get("status", "?")),
 		_punch_counts["f1"][1], _punch_counts["f1"][0],
-		_punch_counts["f2"][1], _punch_counts["f2"][0]
+		_punch_counts["f2"][1], _punch_counts["f2"][0],
+		_combo_counts["f1"], _combo_counts["f2"]
 	]
 	_update_scores(blue_scores, payload["f1"]["scores"])
 	_update_scores(red_scores,  payload["f2"]["scores"])
@@ -93,6 +108,21 @@ func _count_punches(key: String, f: Dictionary) -> void:
 		_punch_counts[key][0] += 1
 		if offense["landed"]:
 			_punch_counts[key][1] += 1
+
+# Announces a finished chain in the punch log the moment the depth drops back to zero.
+# .get() default so an older backend payload without comboCount is a permanent no-op.
+func _track_combo(key: String, corner: String, payload: Dictionary) -> void:
+	var depth: int = payload[key].get("comboCount", 0)
+	var previous: int = _combo_depth[key]
+	_combo_depth[key] = depth
+	if previous > 0 and depth == 0 and payload.get("status", "") == "ROUND_ACTIVE":
+		_combo_counts[key] += 1
+		_punch_log_lines.insert(0, "[R%s t%d] %s combo: %d punches" % [
+			str(payload.get("roundNumber", 0)), payload["tick"], corner, previous + 1
+		])
+		if _punch_log_lines.size() > MAX_LOG_LINES:
+			_punch_log_lines.resize(MAX_LOG_LINES)
+		_punch_log.text = "\n".join(_punch_log_lines)
 
 # One clean line per punch, on its impact tick only: round, tick, corner, punch, verdict.
 # On the impact tick the snapshot's action IS the committed punch (the phase machine
