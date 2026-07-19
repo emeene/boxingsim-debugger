@@ -39,6 +39,6 @@ func update(snapshot: Dictionary) -> void:
 	_count = snapshot.get("count", 0)
 	_downed = snapshot.get("downed")
 	_clinched = snapshot.get("status", "") == "CLINCH"
-	f1.update_from_snapshot(snapshot["f1"]["x"], snapshot["f1"]["y"], snapshot["f1"]["health"], snapshot["f1"]["stamina"], snapshot["f1"].get("phase", "READY"), snapshot["f1"].get("guard"), snapshot["f1"].get("feinted", false), _downed == "f1" or _downed == "both", snapshot["f1"].get("stagger", 0.0))
-	f2.update_from_snapshot(snapshot["f2"]["x"], snapshot["f2"]["y"], snapshot["f2"]["health"], snapshot["f2"]["stamina"], snapshot["f2"].get("phase", "READY"), snapshot["f2"].get("guard"), snapshot["f2"].get("feinted", false), _downed == "f2" or _downed == "both", snapshot["f2"].get("stagger", 0.0))
+	f1.update_from_snapshot(snapshot["f1"]["x"], snapshot["f1"]["y"], snapshot["f1"]["health"], snapshot["f1"]["stamina"], snapshot["f1"].get("phase", "READY"), snapshot["f1"].get("guard"), snapshot["f1"].get("feinted", false), _downed == "f1" or _downed == "both", snapshot["f1"].get("stagger", 0.0), snapshot["f1"].get("morale", -1.0))
+	f2.update_from_snapshot(snapshot["f2"]["x"], snapshot["f2"]["y"], snapshot["f2"]["health"], snapshot["f2"]["stamina"], snapshot["f2"].get("phase", "READY"), snapshot["f2"].get("guard"), snapshot["f2"].get("feinted", false), _downed == "f2" or _downed == "both", snapshot["f2"].get("stagger", 0.0), snapshot["f2"].get("morale", -1.0))
 	queue_redraw()

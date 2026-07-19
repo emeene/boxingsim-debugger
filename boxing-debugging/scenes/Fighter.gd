@@ -33,6 +33,11 @@ var _downed: bool = false
 # toughness AND balance into the number — a great-balance fighter hides his wobble, which
 # is deliberate scouting fog, so the client just renders the amplitude it is given.
 var _stagger: float = 0.0
+# Morale (morale-design.md): tonight's live belief, 0..1 — the fight-long "do I still
+# think I win" that bends pace, position and decision sharpness in the engine. Drawn as
+# a thin amber bar under health/stamina so momentum swings are followable on the bars
+# alone; -1 means an older backend payload without the field, and the bar is not drawn.
+var _morale: float = -1.0
 
 func _draw() -> void:
 	# Fallen pose (hurt cycle): a downed man draws as a darkened, squashed shape lying on
@@ -96,12 +101,20 @@ func _draw_bars() -> void:
 	var stamina_origin := bar_origin + Vector2(0.0, BAR_HEIGHT + 1.0)
 	draw_rect(Rect2(stamina_origin, Vector2(BAR_WIDTH, BAR_HEIGHT)), Color(0.15, 0.15, 0.15))
 	draw_rect(Rect2(stamina_origin, Vector2(BAR_WIDTH * _stamina_fraction, BAR_HEIGHT)), Color(0.25, 0.75, 1.0))
+	# Belief bar (morale): thinner than the body bars because it is a mind read, amber so
+	# it never reads as health (green/red), stamina (cyan-blue) or a windup (yellow tint
+	# on the body). Watching it fall while health still holds IS the broken-on-points
+	# story the morale feature exists to show.
+	if _morale >= 0.0:
+		var morale_origin := stamina_origin + Vector2(0.0, BAR_HEIGHT + 1.0)
+		draw_rect(Rect2(morale_origin, Vector2(BAR_WIDTH, 3.0)), Color(0.15, 0.15, 0.15))
+		draw_rect(Rect2(morale_origin, Vector2(BAR_WIDTH * _morale, 3.0)), Color(1.0, 0.72, 0.2))
 
 func _process(delta: float) -> void:
 	position = position.lerp(_target_position, delta / 0.1)
 	queue_redraw()
 
-func update_from_snapshot(x: float, y: float, health: float, stamina: float, phase: String, guard = null, feinted: bool = false, downed: bool = false, stagger: float = 0.0) -> void:
+func update_from_snapshot(x: float, y: float, health: float, stamina: float, phase: String, guard = null, feinted: bool = false, downed: bool = false, stagger: float = 0.0, morale: float = -1.0) -> void:
 	_target_position = MatchState.to_screen(x, y)
 	_health_fraction = clampf(health / 100.0, 0.0, 1.0)
 	_stamina_fraction = clampf(stamina / 100.0, 0.0, 1.0)
@@ -110,6 +123,7 @@ func update_from_snapshot(x: float, y: float, health: float, stamina: float, pha
 	_cornered = _near_edges(x, y) >= 2
 	_downed = downed
 	_stagger = stagger
+	_morale = morale
 	if feinted:
 		_feint_flash_until_ms = Time.get_ticks_msec() + FEINT_FLASH_MS
 
