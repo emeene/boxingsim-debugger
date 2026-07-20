@@ -30,9 +30,56 @@ var _punch_stats_label: Label
 var _combo_depth := {"f1": 0, "f2": 0}
 var _combo_counts := {"f1": 0, "f2": 0}
 
+# Combo-LENGTH breakdown (owner request 2026-07-20): how many 1/2/3/4/5+-punch sequences
+# a fighter threw, for the summary. This is DELIBERATELY separate from the comboCount-drop
+# tracking above, which only ever fires for chains of length >=2 — a solo, non-chained
+# punch's comboCount never rises above 0 in the first place, so there is no "drop back to
+# 0" for it to trigger on. The signal that fires for every completed punch sequence, solo
+# or chained, and ONLY for punch sequences, is the phase machine's RECOVERY -> READY
+# transition: the backend resets combo bookkeeping there unconditionally ("the chain is
+# over"), and only an OFFENSIVE non-feint punch ever enters RECOVERY at all (movement,
+# defense and CLINCH resolve instantly within READY; a feint's 1-tick STARTUP returns
+# straight to READY, skipping RECOVERY entirely). Each impact along the way records its own
+# comboCount (0-based position in whatever sequence is currently open); the RECOVERY->READY
+# transition finalizes that sequence's length as the last recorded comboCount + 1.
+var _combo_length_counts := {"f1": {}, "f2": {}}
+var _chain_peak_combo := {"f1": -1, "f2": -1}
+var _previous_phase := {"f1": "", "f2": ""}
+
 # The judges' cards are rendered once, on the ENDED payload — guarded in case the final
 # state ever gets delivered twice (e.g. a reconnect)
 var _cards_rendered := false
+
+# Action breakdown (owner request 2026-07-20): every ActionType a fighter executed across
+# the whole bout EXCEPT movement (owner ruling: everything bar movement — the debugger's
+# ring view already reads footwork directly off the fighters, this summary is for the
+# actions the ring view can't hold still long enough to count), shown as a bar chart on
+# demand. Two counting rules, because a single rule would misattribute a live feint: the
+# backend deliberately disguises a fake's 1-tick windup as a JAB in the action field
+# (combat-timing §5, MatchEngine.displayedAction) so a client reacting to it sees exactly
+# what the in-engine sensor does. OFFENSIVE_TYPES counts on the IMPACT tick only (offense
+# non-null — the existing punch-log precedent), so a feint, which never produces an offense
+# verdict, can never inflate a punch count no matter how it displays; FEINT counts on the
+# `feinted` reveal tick, also immune. IDLE, defense and CLINCH are never disguised, so they
+# are edge-triggered on the raw action field: a new count only when the value changes from
+# the fighter's previous ACTIVE tick, the same "how many times did he choose to do this"
+# reading the punch counts already give. MOVEMENT_TYPES ticks are skipped outright — not
+# counted, not even used to update the edge-detection state — so a movement stretch is
+# transparent to it: BLOCK -> MOVE_FORWARD -> BLOCK still reads as one held guard, not two.
+const OFFENSIVE_TYPES := [
+	"JAB", "CROSS", "LEAD_HOOK", "REAR_HOOK", "LEAD_UPPERCUT", "REAR_UPPERCUT",
+	"LEAD_BODY_HOOK", "REAR_BODY_HOOK",
+]
+const MOVEMENT_TYPES := ["MOVE_FORWARD", "MOVE_BACKWARD", "MOVE_LEFT", "MOVE_RIGHT"]
+var _action_counts := {"f1": {}, "f2": {}}
+# THROWN and LANDED are tracked separately for the offensive types only (feint/clinch/
+# movement/defense have no landed concept) — 2026-07-20 fix: the summary originally showed
+# one bare number per punch type with no label, which read as contradicting the sidebar's
+# combined landed/thrown total once the two were compared side by side.
+var _action_landed := {"f1": {}, "f2": {}}
+var _previous_action := {"f1": "", "f2": ""}
+var _was_active := false
+var _action_summary: Control
 
 func _ready() -> void:
 	step_btn.pressed.connect(func(): WebSocketClient.send_command("step"))
@@ -67,14 +114,46 @@ func _ready() -> void:
 	var after_tick_log := $VBoxContainer/TickLog.get_index() + 1
 	$VBoxContainer.move_child(punch_header, after_tick_log)
 	$VBoxContainer.move_child(_punch_log, after_tick_log + 1)
+	# Action summary, built in code and attached over the WHOLE window (ring included) — a
+	# CanvasLayer's children are already screen-space, so this does not need its own layer.
+	# Hidden until the "Watch Summary" button is pressed (2026-07-20: was auto-shown on
+	# ENDED; now on-demand at any point in the fight, current running counts, with a way
+	# back to the ring view).
+	_action_summary = Control.new()
+	_action_summary.set_script(load("res://scenes/ActionSummary.gd"))
+	_action_summary.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_action_summary.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_action_summary.visible = false
+	add_child(_action_summary)
+	# BACK lives ON the summary (a child of it), so hiding the summary hides the button
+	# too — it can only ever be pressed while there is something to go back from.
+	var back_btn := Button.new()
+	back_btn.text = "Back"
+	back_btn.position = Vector2(20, 20)
+	back_btn.pressed.connect(func(): _action_summary.visible = false)
+	_action_summary.add_child(back_btn)
+	# WATCH SUMMARY lives in the main button row, always available — populates the
+	# overlay with whatever has been tallied so far (a live peek mid-fight, the final
+	# tally once the fight has ended) and shows it over the ring view.
+	var watch_btn := Button.new()
+	watch_btn.text = "Watch Summary"
+	watch_btn.pressed.connect(func():
+		_action_summary.set_data(_action_counts["f1"], _action_counts["f2"], _action_landed["f1"], _action_landed["f2"],
+				_combo_length_counts["f1"], _combo_length_counts["f2"])
+		_action_summary.visible = true
+	)
+	$VBoxContainer/HBoxContainer.add_child(watch_btn)
 
 func _on_tick(payload: Dictionary) -> void:
 	_count_punches("f1", payload["f1"])
 	_count_punches("f2", payload["f2"])
 	_log_punch(payload, "BLUE", payload["f1"])
 	_log_punch(payload, "RED",  payload["f2"])
+	_tally_actions(payload)
 	_track_combo("f1", "BLUE", payload)
 	_track_combo("f2", "RED",  payload)
+	_track_combo_length("f1", payload)
+	_track_combo_length("f2", payload)
 	# .get() defaults so an older backend payload without round fields still parses.
 	# Two lines on purpose: one long line does not fit the panel and gets clipped.
 	_punch_stats_label.text = "R%s [%s]  BLUE %d/%d — RED %d/%d (landed/thrown)\ncombos BLUE %d — RED %d" % [
@@ -102,6 +181,46 @@ func _on_tick(payload: Dictionary) -> void:
 		_log_lines.resize(MAX_LOG_LINES)
 	tick_log.text = "\n".join(_log_lines)
 
+# Two counting rules live here — see the class-level comment on OFFENSIVE_TYPES for why.
+func _tally_actions(payload: Dictionary) -> void:
+	var active: bool = payload.get("status", "") == "ROUND_ACTIVE"
+	if active and not _was_active:
+		# A round just (re)started (or this is the fight's first active tick) — whatever
+		# the action field showed before a break belongs to a different engagement, so
+		# the first active tick after one always counts fresh instead of comparing
+		# against stale pre-break state.
+		_previous_action["f1"] = ""
+		_previous_action["f2"] = ""
+	_was_active = active
+	if not active:
+		return
+	_tally_one("f1", payload["f1"])
+	_tally_one("f2", payload["f2"])
+
+func _tally_one(key: String, f: Dictionary) -> void:
+	var offense = f.get("offense")
+	if offense != null:
+		var punch: String = str(f["action"])
+		_action_counts[key][punch] = _action_counts[key].get(punch, 0) + 1
+		if offense["landed"]:
+			_action_landed[key][punch] = _action_landed[key].get(punch, 0) + 1
+		return
+	if f.get("feinted", false):
+		_action_counts[key]["FEINT"] = _action_counts[key].get("FEINT", 0) + 1
+		return
+	var action: String = str(f["action"])
+	# A live feint's disguised windup and a real punch's non-impact ticks both show an
+	# OFFENSIVE type here — both are already owned by the two branches above (the fake's
+	# own reveal tick, the punch's own impact tick). MOVEMENT_TYPES is excluded from this
+	# summary entirely (owner ruling). Both skip without touching _previous_action, so a
+	# movement stretch (or a punch/feint) sandwiched between two IDLE/defense/clinch reads
+	# never breaks up what is really one held state into two counted instances.
+	if action in OFFENSIVE_TYPES or action in MOVEMENT_TYPES:
+		return
+	if action != _previous_action[key]:
+		_action_counts[key][action] = _action_counts[key].get(action, 0) + 1
+	_previous_action[key] = action
+
 func _count_punches(key: String, f: Dictionary) -> void:
 	var offense = f.get("offense")
 	if offense != null:
@@ -123,6 +242,23 @@ func _track_combo(key: String, corner: String, payload: Dictionary) -> void:
 		if _punch_log_lines.size() > MAX_LOG_LINES:
 			_punch_log_lines.resize(MAX_LOG_LINES)
 		_punch_log.text = "\n".join(_punch_log_lines)
+
+# See the class-level comment on _combo_length_counts for why this cannot reuse the
+# comboCount-drop logic above: a solo punch never leaves comboCount at 0, so RECOVERY ->
+# READY is the only signal that fires for every completed sequence, length 1 included.
+func _track_combo_length(key: String, payload: Dictionary) -> void:
+	var f: Dictionary = payload[key]
+	var offense = f.get("offense")
+	if offense != null:
+		_chain_peak_combo[key] = f.get("comboCount", 0)
+	var phase: String = f.get("phase", "READY")
+	if _previous_phase[key] == "RECOVERY" and phase == "READY" \
+			and payload.get("status", "") == "ROUND_ACTIVE" and _chain_peak_combo[key] >= 0:
+		var length: int = _chain_peak_combo[key] + 1
+		var bucket: String = str(length) if length <= 4 else "5+"
+		_combo_length_counts[key][bucket] = _combo_length_counts[key].get(bucket, 0) + 1
+		_chain_peak_combo[key] = -1
+	_previous_phase[key] = phase
 
 # One clean line per punch, on its impact tick only: round, tick, corner, punch, verdict.
 # On the impact tick the snapshot's action IS the committed punch (the phase machine
