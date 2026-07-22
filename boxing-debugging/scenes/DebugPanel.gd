@@ -79,7 +79,17 @@ var _action_counts := {"f1": {}, "f2": {}}
 var _action_landed := {"f1": {}, "f2": {}}
 var _previous_action := {"f1": "", "f2": ""}
 var _was_active := false
+# A tie-up suspends both brains and runs under its own CLINCH match status, so the action
+# field can't edge-trigger a clinch the way it does the other held states. Instead we count one
+# CLINCH for each man the moment the status FIRST turns CLINCH — one per tie-up, matching the
+# gold tether the ring draws.
+var _was_clinched := false
 var _action_summary: Control
+
+# Persist the tick log to a file alongside the on-screen log (which is capped): the file keeps
+# the WHOLE fight so a watched bout can be read back afterward. Opened by start_logging with the
+# path Main builds from the clock and the matchup.
+var _log_file: FileAccess = null
 
 func _ready() -> void:
 	step_btn.pressed.connect(func(): WebSocketClient.send_command("step"))
@@ -150,6 +160,7 @@ func _on_tick(payload: Dictionary) -> void:
 	_log_punch(payload, "BLUE", payload["f1"])
 	_log_punch(payload, "RED",  payload["f2"])
 	_tally_actions(payload)
+	_tally_clinch(payload)
 	_track_combo("f1", "BLUE", payload)
 	_track_combo("f2", "RED",  payload)
 	_track_combo_length("f1", payload)
@@ -164,11 +175,14 @@ func _on_tick(payload: Dictionary) -> void:
 	]
 	_update_scores(blue_scores, payload["f1"]["scores"])
 	_update_scores(red_scores,  payload["f2"]["scores"])
-	_log_lines.insert(0, "[%d] F1: %s | F2: %s" % [
+	var tick_line := "[%d] F1: %s | F2: %s" % [
 		payload["tick"],
 		_fighter_entry(payload["f1"]),
 		_fighter_entry(payload["f2"])
-	])
+	]
+	_log_lines.insert(0, tick_line)
+	# The on-screen log is newest-first and capped; the file gets every line in fight order.
+	_write_log(tick_line)
 	# At the final bell the payload carries the three judges' cards (null on a stoppage —
 	# a KO needs no scorecard). Newest-first log, so the block lands on top of everything.
 	var decision = payload.get("decision")
@@ -177,9 +191,42 @@ func _on_tick(payload: Dictionary) -> void:
 		var block := _scorecard_lines(decision)
 		for i in range(block.size() - 1, -1, -1):
 			_log_lines.insert(0, block[i])
+		for card_line in block:
+			_write_log(card_line)
+	if payload.get("status", "") == "ENDED":
+		_close_log()
 	if _log_lines.size() > MAX_LOG_LINES:
 		_log_lines.resize(MAX_LOG_LINES)
 	tick_log.text = "\n".join(_log_lines)
+
+# Count one CLINCH for each man the instant a tie-up begins — see _was_clinched.
+func _tally_clinch(payload: Dictionary) -> void:
+	var clinched: bool = payload.get("status", "") == "CLINCH"
+	if clinched and not _was_clinched:
+		_action_counts["f1"]["CLINCH"] = _action_counts["f1"].get("CLINCH", 0) + 1
+		_action_counts["f2"]["CLINCH"] = _action_counts["f2"].get("CLINCH", 0) + 1
+	_was_clinched = clinched
+
+# Open the fight's log file. Main calls this with the timestamp-and-matchup path.
+func start_logging(path: String, header: String) -> void:
+	_log_file = FileAccess.open(path, FileAccess.WRITE)
+	if _log_file != null:
+		_log_file.store_line(header)
+		_log_file.store_line("")
+
+func _write_log(line: String) -> void:
+	if _log_file != null:
+		_log_file.store_line(line)
+
+func _close_log() -> void:
+	if _log_file != null:
+		_log_file.flush()
+		_log_file.close()
+		_log_file = null
+
+# Quitting mid-fight still leaves a complete file up to the last tick watched.
+func _exit_tree() -> void:
+	_close_log()
 
 # Two counting rules live here — see the class-level comment on OFFENSIVE_TYPES for why.
 func _tally_actions(payload: Dictionary) -> void:
