@@ -38,14 +38,13 @@ const PUNCH_TYPES := [
 const ACTION_ORDER := [
 	"JAB", "CROSS", "LEAD_HOOK", "REAR_HOOK", "LEAD_UPPERCUT", "REAR_UPPERCUT",
 	"LEAD_BODY_HOOK", "REAR_BODY_HOOK",
-	"FEINT", "CLINCH",
+	"FEINT",
 	"BLOCK", "SLIP_LEFT", "SLIP_RIGHT",
 	"IDLE",
 ]
-# CLINCH is genuinely rare (a handful of attempts a bout even after the 2026-07-20 fixes) —
-# the zero-suppression below would hide it in most fights, reading as "never implemented"
-# rather than "didn't happen this bout." Owner asked for it explicitly, so it always shows.
-const ALWAYS_SHOWN := ["CLINCH"]
+# Action rows that show even at a zero count. Empty since the clinch — the one action the
+# owner wanted pinned visible — was removed in the first slice of the clinch rework.
+const ALWAYS_SHOWN := []
 
 # Bucket keys match DebugPanel._track_combo_length's own bucketing exactly ("5+" for
 # anything longer than 4) — labels here are just the display text for each key.
