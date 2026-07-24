@@ -16,12 +16,25 @@ var _ended_label: Label
 func _ready() -> void:
 	WebSocketClient.tick_received.connect(_on_tick)
 	MatchHttpClient.create_debug_match(rounds, tier1, tier2, weight_class)
+	_start_fight_log()
 	# Built in code so no .tscn edit is needed — shown once the payload reports ENDED
 	_ended_label = Label.new()
 	_ended_label.add_theme_font_size_override("font_size", 40)
 	_ended_label.position = Vector2(440.0, 20.0)
 	_ended_label.visible = false
 	add_child(_ended_label)
+
+# Write this fight's tick log to a text file in the boxingsim-debugger repo root, named by the
+# wall clock and the matchup: month-day-hour-minute-second-tier1-tier2.txt. The Godot project
+# lives in boxing-debugging/, so the repo root is one directory up from res://.
+func _start_fight_log() -> void:
+	var t := Time.get_datetime_dict_from_system()
+	var stamp := "%02d-%02d-%02d-%02d-%02d" % [t.month, t.day, t.hour, t.minute, t.second]
+	var filename := "%s-%s-%s.txt" % [stamp, tier1, tier2]
+	var repo_root := ProjectSettings.globalize_path("res://").path_join("..").simplify_path()
+	var path := repo_root.path_join(filename)
+	var header := "%s vs %s · %s · %d rounds · started %s" % [tier1, tier2, weight_class, rounds, stamp]
+	$DebugPanel.start_logging(path, header)
 
 # Every time WebSocketClient emits tick_received, _on_tick gets called with the payload.
 func _on_tick(payload: Dictionary) -> void:

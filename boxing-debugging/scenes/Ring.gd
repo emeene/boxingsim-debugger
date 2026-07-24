@@ -10,9 +10,10 @@ const RING_SIZE := 600.0
 # drawn big over the ring while a count runs — 0 means the referee hasn't said "one" yet.
 var _count: int = 0
 var _downed = null
-# The clinch (hurt cycle survival): while the payload's status says CLINCH the two men are
-# tied up — a rope between the circles plus the word over the ring, so a hold can never be
-# mistaken for two fighters idling at close range.
+# The rebuilt clinch: while the payload's status says CLINCH the two men are tied up — a rope
+# between the circles plus the word over the ring, so a hold can never be mistaken for two
+# fighters idling at close range. The tie-up covers the whole engagement (the lunge, the hold,
+# and the break) on the backend side.
 var _clinched: bool = false
 
 func _draw() -> void:
@@ -23,9 +24,8 @@ func _draw() -> void:
 		draw_string(ThemeDB.fallback_font, center_top, str(_count),
 				HORIZONTAL_ALIGNMENT_CENTER, -1, 56, Color.WHITE)
 	if _clinched:
-		# The fighters are direct children of origin-anchored wrappers, so their node
-		# positions are in this ring's own space — the tether follows the same lerp the
-		# circles do and never detaches from them.
+		# The fighters are direct children of origin-anchored wrappers, so their node positions
+		# are in this ring's own space — the tether follows the same lerp the circles do.
 		draw_line(f1.position, f2.position, Color.GOLD, 3.0)
 		var label_pos := origin + Vector2(RING_SIZE / 2.0 - 44.0, 64.0)
 		draw_string(ThemeDB.fallback_font, label_pos, "CLINCH",

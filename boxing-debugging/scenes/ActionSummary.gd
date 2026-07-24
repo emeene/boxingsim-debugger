@@ -42,9 +42,9 @@ const ACTION_ORDER := [
 	"BLOCK", "SLIP_LEFT", "SLIP_RIGHT",
 	"IDLE",
 ]
-# CLINCH is genuinely rare (a handful of attempts a bout even after the 2026-07-20 fixes) —
-# the zero-suppression below would hide it in most fights, reading as "never implemented"
-# rather than "didn't happen this bout." Owner asked for it explicitly, so it always shows.
+# Action rows that show even at a zero count. The rebuilt grab decision is worth pinning
+# visible — it can be rare in a technical fight, and a hidden zero reads as "never implemented"
+# rather than "didn't happen this bout."
 const ALWAYS_SHOWN := ["CLINCH"]
 
 # Bucket keys match DebugPanel._track_combo_length's own bucketing exactly ("5+" for
