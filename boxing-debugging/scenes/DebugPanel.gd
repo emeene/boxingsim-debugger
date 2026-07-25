@@ -61,8 +61,10 @@ var _cards_rendered := false
 # non-null — the existing punch-log precedent), so a feint, which never produces an offense
 # verdict, can never inflate a punch count no matter how it displays; FEINT counts on the
 # `feinted` reveal tick, also immune. FAKE is never disguised — nobody can be fooled by a
-# probe, so the backend broadcasts it as itself — and it has no impact and no reveal flag, so
-# it falls to the edge-triggered rule below and counts once per probe. IDLE, defense and
+# probe, so the backend broadcasts it as itself — and it counts on its own one-tick WINDUP,
+# the same rule the headless harness uses. It deliberately does NOT use the edge-triggered
+# rule: probes are not capped at one per engagement, so they land back-to-back and a run of
+# them would read as a single instance. IDLE, defense and
 # CLINCH are never disguised either, so they
 # are edge-triggered on the raw action field: a new count only when the value changes from
 # the fighter's previous ACTIVE tick, the same "how many times did he choose to do this"
@@ -259,6 +261,18 @@ func _tally_one(key: String, f: Dictionary) -> void:
 		_action_counts[key]["FEINT"] = _action_counts[key].get("FEINT", 0) + 1
 		return
 	var action: String = str(f["action"])
+	# A probe is counted on its own WINDUP tick, which lasts exactly one tick, so this counts
+	# one per probe — the same rule the headless harness uses. It must NOT fall through to the
+	# edge-triggered rule below: probes are no longer capped at one per engagement, so they
+	# land back-to-back constantly, and an edge-triggered count reads a whole run of them as a
+	# single instance. That undercounted by three to five times against the harness.
+	if action == "FAKE":
+		if str(f.get("phase", "")) == "STARTUP":
+			_action_counts[key]["FAKE"] = _action_counts[key].get("FAKE", 0) + 1
+		# Either way it returns without touching _previous_action, exactly like a punch or a
+		# feint does — so a probe between two guards still reads as one held guard, and a
+		# FAKE the boxer merely WANTED but never committed is not counted as one he threw.
+		return
 	# A live feint's disguised windup and a real punch's non-impact ticks both show an
 	# OFFENSIVE type here — both are already owned by the two branches above (the fake's
 	# own reveal tick, the punch's own impact tick). MOVEMENT_TYPES is excluded from this
