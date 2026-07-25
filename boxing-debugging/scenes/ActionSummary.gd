@@ -38,7 +38,11 @@ const PUNCH_TYPES := [
 const ACTION_ORDER := [
 	"JAB", "CROSS", "LEAD_HOOK", "REAR_HOOK", "LEAD_UPPERCUT", "REAR_UPPERCUT",
 	"LEAD_BODY_HOOK", "REAR_BODY_HOOK",
-	"FEINT", "CLINCH",
+	# FEINT is the loaded setup that sells a punch; FAKE is the empty probe that only reads
+	# the other man. They are separate actions doing separate jobs, so they get separate rows
+	# — and seeing FAKE run into the hundreds while FEINT stays in single figures is exactly
+	# the split working.
+	"FEINT", "FAKE", "CLINCH",
 	"BLOCK", "SLIP_LEFT", "SLIP_RIGHT",
 	"IDLE",
 ]

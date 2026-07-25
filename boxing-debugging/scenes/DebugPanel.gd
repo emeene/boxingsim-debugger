@@ -60,7 +60,10 @@ var _cards_rendered := false
 # what the in-engine sensor does. OFFENSIVE_TYPES counts on the IMPACT tick only (offense
 # non-null — the existing punch-log precedent), so a feint, which never produces an offense
 # verdict, can never inflate a punch count no matter how it displays; FEINT counts on the
-# `feinted` reveal tick, also immune. IDLE, defense and CLINCH are never disguised, so they
+# `feinted` reveal tick, also immune. FAKE is never disguised — nobody can be fooled by a
+# probe, so the backend broadcasts it as itself — and it has no impact and no reveal flag, so
+# it falls to the edge-triggered rule below and counts once per probe. IDLE, defense and
+# CLINCH are never disguised either, so they
 # are edge-triggered on the raw action field: a new count only when the value changes from
 # the fighter's previous ACTIVE tick, the same "how many times did he choose to do this"
 # reading the punch counts already give. MOVEMENT_TYPES ticks are skipped outright — not
