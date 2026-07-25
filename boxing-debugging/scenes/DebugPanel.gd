@@ -49,6 +49,8 @@ var _previous_phase := {"f1": "", "f2": ""}
 # The judges' cards are rendered once, on the ENDED payload — guarded in case the final
 # state ever gets delivered twice (e.g. a reconnect)
 var _cards_rendered := false
+# Latest running scorecard from the payload; null until the first bell has been scored.
+var _running_cards = null
 
 # Action breakdown (owner request 2026-07-20): every ActionType a fighter executed across
 # the whole bout EXCEPT movement (owner ruling: everything bar movement — the debugger's
@@ -154,7 +156,7 @@ func _ready() -> void:
 	watch_btn.text = "Watch Summary"
 	watch_btn.pressed.connect(func():
 		_action_summary.set_data(_action_counts["f1"], _action_counts["f2"], _action_landed["f1"], _action_landed["f2"],
-				_combo_length_counts["f1"], _combo_length_counts["f2"])
+				_combo_length_counts["f1"], _combo_length_counts["f2"], _running_cards)
 		_action_summary.visible = true
 	)
 	$VBoxContainer/HBoxContainer.add_child(watch_btn)
@@ -190,6 +192,10 @@ func _on_tick(payload: Dictionary) -> void:
 	_write_log(tick_line)
 	# At the final bell the payload carries the three judges' cards (null on a stoppage —
 	# a KO needs no scorecard). Newest-first log, so the block lands on top of everything.
+	# Keep the latest running card so "Watch Summary" can always show where the fight
+	# stands on points — mid-fight, and after a knockout too, where `decision` stays null
+	# because a stoppage has no official card.
+	_running_cards = payload.get("runningCards")
 	var decision = payload.get("decision")
 	if payload.get("status", "") == "ENDED" and decision != null and not _cards_rendered:
 		_cards_rendered = true
