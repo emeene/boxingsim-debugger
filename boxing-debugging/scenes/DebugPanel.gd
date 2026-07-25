@@ -49,6 +49,8 @@ var _previous_phase := {"f1": "", "f2": ""}
 # The judges' cards are rendered once, on the ENDED payload — guarded in case the final
 # state ever gets delivered twice (e.g. a reconnect)
 var _cards_rendered := false
+# Latest running scorecard from the payload; null until the first bell has been scored.
+var _running_cards = null
 
 # Action breakdown (owner request 2026-07-20): every ActionType a fighter executed across
 # the whole bout EXCEPT movement (owner ruling: everything bar movement — the debugger's
@@ -60,7 +62,12 @@ var _cards_rendered := false
 # what the in-engine sensor does. OFFENSIVE_TYPES counts on the IMPACT tick only (offense
 # non-null — the existing punch-log precedent), so a feint, which never produces an offense
 # verdict, can never inflate a punch count no matter how it displays; FEINT counts on the
-# `feinted` reveal tick, also immune. IDLE, defense and CLINCH are never disguised, so they
+# `feinted` reveal tick, also immune. FAKE is never disguised — nobody can be fooled by a
+# probe, so the backend broadcasts it as itself — and it counts on its own one-tick WINDUP,
+# the same rule the headless harness uses. It deliberately does NOT use the edge-triggered
+# rule: probes are not capped at one per engagement, so they land back-to-back and a run of
+# them would read as a single instance. IDLE, defense and
+# CLINCH are never disguised either, so they
 # are edge-triggered on the raw action field: a new count only when the value changes from
 # the fighter's previous ACTIVE tick, the same "how many times did he choose to do this"
 # reading the punch counts already give. MOVEMENT_TYPES ticks are skipped outright — not
@@ -149,7 +156,7 @@ func _ready() -> void:
 	watch_btn.text = "Watch Summary"
 	watch_btn.pressed.connect(func():
 		_action_summary.set_data(_action_counts["f1"], _action_counts["f2"], _action_landed["f1"], _action_landed["f2"],
-				_combo_length_counts["f1"], _combo_length_counts["f2"])
+				_combo_length_counts["f1"], _combo_length_counts["f2"], _running_cards)
 		_action_summary.visible = true
 	)
 	$VBoxContainer/HBoxContainer.add_child(watch_btn)
@@ -185,6 +192,10 @@ func _on_tick(payload: Dictionary) -> void:
 	_write_log(tick_line)
 	# At the final bell the payload carries the three judges' cards (null on a stoppage —
 	# a KO needs no scorecard). Newest-first log, so the block lands on top of everything.
+	# Keep the latest running card so "Watch Summary" can always show where the fight
+	# stands on points — mid-fight, and after a knockout too, where `decision` stays null
+	# because a stoppage has no official card.
+	_running_cards = payload.get("runningCards")
 	var decision = payload.get("decision")
 	if payload.get("status", "") == "ENDED" and decision != null and not _cards_rendered:
 		_cards_rendered = true
@@ -256,6 +267,18 @@ func _tally_one(key: String, f: Dictionary) -> void:
 		_action_counts[key]["FEINT"] = _action_counts[key].get("FEINT", 0) + 1
 		return
 	var action: String = str(f["action"])
+	# A probe is counted on its own WINDUP tick, which lasts exactly one tick, so this counts
+	# one per probe — the same rule the headless harness uses. It must NOT fall through to the
+	# edge-triggered rule below: probes are no longer capped at one per engagement, so they
+	# land back-to-back constantly, and an edge-triggered count reads a whole run of them as a
+	# single instance. That undercounted by three to five times against the harness.
+	if action == "FAKE":
+		if str(f.get("phase", "")) == "STARTUP":
+			_action_counts[key]["FAKE"] = _action_counts[key].get("FAKE", 0) + 1
+		# Either way it returns without touching _previous_action, exactly like a punch or a
+		# feint does — so a probe between two guards still reads as one held guard, and a
+		# FAKE the boxer merely WANTED but never committed is not counted as one he threw.
+		return
 	# A live feint's disguised windup and a real punch's non-impact ticks both show an
 	# OFFENSIVE type here — both are already owned by the two branches above (the fake's
 	# own reveal tick, the punch's own impact tick). MOVEMENT_TYPES is excluded from this

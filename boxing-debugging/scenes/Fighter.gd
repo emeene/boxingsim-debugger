@@ -38,6 +38,17 @@ var _stagger: float = 0.0
 # a thin amber bar under health/stamina so momentum swings are followable on the bars
 # alone; -1 means an older backend payload without the field, and the bar is not drawn.
 var _morale: float = -1.0
+# Opponent read (feints-fakes-study-design.md): how well this man has read the one in front
+# of him tonight, 0..1. It starts at 0 — he walks in a stranger — and climbs as he probes,
+# fast in the first rounds and barely at all later. It is the ONLY thing in the engine that
+# moves a fighter's accuracy, so watching this bar fill IS watching "he's got his timing
+# now" arrive. -1 means an older backend payload without the field, and the bar is not drawn.
+var _opponent_read: float = -1.0
+# A live probe: the empty fake that sets up nothing and only reads the other man. Unlike a
+# feint, the backend broadcasts this one as itself — nobody can be fooled by a probe, so
+# there is nothing to hide. Drawn as a small open ring rather than a flash, because at
+# twenty-odd a round a flash would strobe the whole fight.
+var _probing: bool = false
 
 func _draw() -> void:
 	# Fallen pose (hurt cycle): a downed man draws as a darkened, squashed shape lying on
@@ -85,6 +96,13 @@ func _draw() -> void:
 		var flash_color := Color.MAGENTA
 		flash_color.a = flash_left / FEINT_FLASH_MS
 		draw_arc(Vector2.ZERO, RADIUS + 9.0, 0.0, TAU, 32, flash_color, 3.0)
+	# Probe mark: a small violet tick on the lead side while a fake is live. Deliberately
+	# quiet — a probe happens twenty-odd times a round, so anything as loud as the feint's
+	# magenta flash would strobe continuously and drown out the moments that matter. It
+	# matches the read bar's colour on purpose: the probing is the cause, the bar is the
+	# effect, and seeing them together is the whole point of watching a measuring round.
+	if _probing:
+		draw_arc(Vector2.ZERO, RADIUS + 4.0, -PI * 0.25, PI * 0.25, 8, Color(0.72, 0.45, 1.0), 2.0)
 	# The sway must not reach the bars — reset the transform so they stay readable
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	_draw_bars()
@@ -109,12 +127,20 @@ func _draw_bars() -> void:
 		var morale_origin := stamina_origin + Vector2(0.0, BAR_HEIGHT + 1.0)
 		draw_rect(Rect2(morale_origin, Vector2(BAR_WIDTH, 3.0)), Color(0.15, 0.15, 0.15))
 		draw_rect(Rect2(morale_origin, Vector2(BAR_WIDTH * _morale, 3.0)), Color(1.0, 0.72, 0.2))
+	# Read bar (studying the rival): same thin shape as belief, sitting under it, in violet so
+	# it reads as a third mind channel and never as health, stamina or belief. It only ever
+	# goes UP during a fight, which is the tell to watch for — one man's bar pulling ahead of
+	# the other's is him solving the fight first, and his punches starting to land better.
+	if _opponent_read >= 0.0:
+		var read_origin := stamina_origin + Vector2(0.0, (BAR_HEIGHT + 1.0) + 4.0)
+		draw_rect(Rect2(read_origin, Vector2(BAR_WIDTH, 3.0)), Color(0.15, 0.15, 0.15))
+		draw_rect(Rect2(read_origin, Vector2(BAR_WIDTH * _opponent_read, 3.0)), Color(0.72, 0.45, 1.0))
 
 func _process(delta: float) -> void:
 	position = position.lerp(_target_position, delta / 0.1)
 	queue_redraw()
 
-func update_from_snapshot(x: float, y: float, health: float, stamina: float, phase: String, guard = null, feinted: bool = false, downed: bool = false, stagger: float = 0.0, morale: float = -1.0) -> void:
+func update_from_snapshot(x: float, y: float, health: float, stamina: float, phase: String, guard = null, feinted: bool = false, downed: bool = false, stagger: float = 0.0, morale: float = -1.0, opponent_read: float = -1.0, action: String = "") -> void:
 	_target_position = MatchState.to_screen(x, y)
 	_health_fraction = clampf(health / 100.0, 0.0, 1.0)
 	_stamina_fraction = clampf(stamina / 100.0, 0.0, 1.0)
@@ -124,6 +150,11 @@ func update_from_snapshot(x: float, y: float, health: float, stamina: float, pha
 	_downed = downed
 	_stagger = stagger
 	_morale = morale
+	_opponent_read = opponent_read
+	# A probe is live only while its windup is running. One tick is all it lasts, which at
+	# high speed is a few milliseconds — that is fine here precisely because the mark is
+	# quiet: it reads as a flicker on the lead side, the way real probing looks.
+	_probing = action == "FAKE" and phase == "STARTUP"
 	if feinted:
 		_feint_flash_until_ms = Time.get_ticks_msec() + FEINT_FLASH_MS
 

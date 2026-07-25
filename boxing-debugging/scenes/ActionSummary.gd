@@ -38,7 +38,11 @@ const PUNCH_TYPES := [
 const ACTION_ORDER := [
 	"JAB", "CROSS", "LEAD_HOOK", "REAR_HOOK", "LEAD_UPPERCUT", "REAR_UPPERCUT",
 	"LEAD_BODY_HOOK", "REAR_BODY_HOOK",
-	"FEINT", "CLINCH",
+	# FEINT is the loaded setup that sells a punch; FAKE is the empty probe that only reads
+	# the other man. They are separate actions doing separate jobs, so they get separate rows
+	# — and seeing FAKE run into the hundreds while FEINT stays in single figures is exactly
+	# the split working.
+	"FEINT", "FAKE", "CLINCH",
 	"BLOCK", "SLIP_LEFT", "SLIP_RIGHT",
 	"IDLE",
 ]
@@ -53,6 +57,8 @@ const COMBO_LENGTH_ORDER := ["1", "2", "3", "4", "5+"]
 const COMBO_LENGTH_LABELS := {"1": "1 (single)", "2": "2", "3": "3", "4": "4", "5+": "5+"}
 
 const ROW_HEIGHT := 24.0
+# One judge per line, plus a heading — kept tighter than a bar row since it is plain text.
+const CARD_LINE_HEIGHT := 18.0
 const BAR_MAX_WIDTH := 220.0
 const LABEL_WIDTH := 130.0
 const LABEL_FONT_SIZE := 14
@@ -71,18 +77,58 @@ var _blue_landed: Dictionary = {}
 var _red_landed: Dictionary = {}
 var _blue_combo_lengths: Dictionary = {}
 var _red_combo_lengths: Dictionary = {}
+# The judges' running card (owner request): the three cards as they stand over the rounds
+# finished so far, shown ALWAYS rather than only at the end. Null before the first bell, when
+# there is genuinely nothing to score, and still populated after a knockout — where the fight
+# has no official card but "where it stood on points" is exactly what you want to know.
+var _cards = null
 
 # Called every time "Watch Summary" is pressed — DebugPanel hands over whatever it has
 # tallied so far, live mid-fight or final once the fight has ended.
 func set_data(blue_counts: Dictionary, red_counts: Dictionary, blue_landed: Dictionary, red_landed: Dictionary,
-		blue_combo_lengths: Dictionary, red_combo_lengths: Dictionary) -> void:
+		blue_combo_lengths: Dictionary, red_combo_lengths: Dictionary, cards = null) -> void:
 	_blue_counts = blue_counts
 	_red_counts = red_counts
 	_blue_landed = blue_landed
 	_red_landed = red_landed
 	_blue_combo_lengths = blue_combo_lengths
 	_red_combo_lengths = red_combo_lengths
+	_cards = cards
 	queue_redraw()
+
+# The three judges' card as text: a heading with where the fight stands, then one line per
+# judge with his totals, who he has ahead, and his round-by-round awards. Empty before the
+# first bell — there is nothing to score yet, and an empty block is better than a row of
+# zeroes pretending a round happened.
+func _card_lines() -> PackedStringArray:
+	if _cards == null:
+		return PackedStringArray()
+	var lines := PackedStringArray(["JUDGES' CARDS — %s (%s)" % [
+		_card_leader(_cards["winner"]), str(_cards["type"])
+	]])
+	var judge := 1
+	for card in _cards["cards"]:
+		var rounds := ""
+		for r in card["rounds"]:
+			rounds += "%d-%d " % [r["f1"], r["f2"]]
+		lines.append("J%d  %d-%d  %s   %s" % [
+			judge, card["f1Total"], card["f2Total"],
+			_card_leader_from_totals(card["f1Total"], card["f2Total"]), rounds.strip_edges()
+		])
+		judge += 1
+	return lines
+
+# The backend names the leader as F1 / F2 / DRAW; the debugger speaks in corners.
+func _card_leader(winner) -> String:
+	match str(winner):
+		"F1": return "BLUE AHEAD"
+		"F2": return "RED AHEAD"
+		_: return "EVEN"
+
+func _card_leader_from_totals(f1_total: int, f2_total: int) -> String:
+	if f1_total > f2_total: return "BLUE"
+	if f2_total > f1_total: return "RED"
+	return "EVEN"
 
 func _draw() -> void:
 	var viewport_size := get_viewport_rect().size
@@ -101,7 +147,16 @@ func _draw() -> void:
 	# to compare, unlike a punch type that may simply never come up in a given bout.
 	var combo_rows: Array = COMBO_LENGTH_ORDER
 
-	var content_height := 90.0 + rows.size() * ROW_HEIGHT + 40.0 + combo_rows.size() * ROW_HEIGHT
+	# The judges' card sits at the TOP, above the action rows: it is the one thing a viewer
+	# always wants to know, and burying it under twenty bars would defeat the point of showing
+	# it at all times. Everything below it is shifted by the block's height, so the whole
+	# summary re-centres instead of overflowing the window.
+	var card_lines := _card_lines()
+	var card_block_h := 0.0
+	if not card_lines.is_empty():
+		card_block_h = 12.0 + card_lines.size() * CARD_LINE_HEIGHT
+
+	var content_height := 90.0 + card_block_h + rows.size() * ROW_HEIGHT + 40.0 + combo_rows.size() * ROW_HEIGHT
 	var origin := Vector2(viewport_size.x / 2.0 - 340.0, (viewport_size.y - content_height) / 2.0)
 
 	draw_string(ThemeDB.fallback_font, origin + Vector2(0.0, 0.0), "FIGHT SUMMARY — ACTIONS EXECUTED",
@@ -109,14 +164,20 @@ func _draw() -> void:
 	draw_string(ThemeDB.fallback_font, origin + Vector2(0.0, 22.0),
 			"punches show landed/thrown — everything else is total times executed",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.6, 0.6, 0.6))
-	draw_string(ThemeDB.fallback_font, origin + Vector2(LABEL_WIDTH + 10.0, 54.0), "BLUE",
+	for i in range(card_lines.size()):
+		# First line is the heading, the three after it are the judges — heading a touch
+		# brighter so the block reads as one thing rather than four loose strings.
+		var card_color := Color.WHITE if i == 0 else Color(0.82, 0.82, 0.82)
+		draw_string(ThemeDB.fallback_font, origin + Vector2(0.0, 44.0 + i * CARD_LINE_HEIGHT),
+				card_lines[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, card_color)
+	draw_string(ThemeDB.fallback_font, origin + Vector2(LABEL_WIDTH + 10.0, 54.0 + card_block_h), "BLUE",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 16, BLUE_COLOR)
 	# ONE red column start for every row, based on the widest blue label this draw will
 	# render — a straight aligned column, not a jagged one, and still guaranteed wide
 	# enough for every row since it is the actual measured maximum, not a guess.
 	var bar_x := origin.x + LABEL_WIDTH + 10.0
 	var red_bar_x := bar_x + BAR_MAX_WIDTH + 8.0 + _widest_blue_label(rows, combo_rows) + COLUMN_MARGIN
-	draw_string(ThemeDB.fallback_font, Vector2(red_bar_x, origin.y + 54.0), "RED",
+	draw_string(ThemeDB.fallback_font, Vector2(red_bar_x, origin.y + 54.0 + card_block_h), "RED",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 16, RED_COLOR)
 
 	for i in range(rows.size()):
@@ -124,7 +185,7 @@ func _draw() -> void:
 		var is_punch: bool = action in PUNCH_TYPES
 		var blue: int = _blue_counts.get(action, 0)
 		var red: int = _red_counts.get(action, 0)
-		var y := origin.y + 70.0 + i * ROW_HEIGHT
+		var y := origin.y + 70.0 + card_block_h + i * ROW_HEIGHT
 		draw_string(ThemeDB.fallback_font, Vector2(origin.x, y + 14.0), action,
 				HORIZONTAL_ALIGNMENT_LEFT, LABEL_WIDTH, 14, Color.WHITE_SMOKE)
 		# BLUE and RED are compared against each other for THIS row only (by thrown count,
@@ -138,7 +199,7 @@ func _draw() -> void:
 
 	# Combo-length section: a separate labeled block, since a sequence length is not an
 	# ActionType and does not belong mixed into the rows above.
-	var section_y := origin.y + 70.0 + rows.size() * ROW_HEIGHT + 16.0
+	var section_y := origin.y + 70.0 + card_block_h + rows.size() * ROW_HEIGHT + 16.0
 	draw_string(ThemeDB.fallback_font, Vector2(origin.x, section_y), "COMBO LENGTH (punches per thrown sequence)",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color.WHITE)
 	for i in range(combo_rows.size()):
