@@ -46,6 +46,19 @@ var _combo_length_counts := {"f1": {}, "f2": {}}
 var _chain_peak_combo := {"f1": -1, "f2": -1}
 var _previous_phase := {"f1": "", "f2": ""}
 
+# The punch log groups a whole sequence into ONE entry (owner watch 2026-07-26). Before this
+# it printed a line per punch, so a 1-2-3 that missed read as three unrelated "JAB — missed"
+# lines and looked like three separate failed attempts, when it was one combination that
+# missed. The punches of the sequence currently open are buffered here as already-formatted
+# fragments and emitted together when the sequence ends; _pending_at holds the round and tick
+# of its FIRST punch, so the entry is stamped where the combination started rather than where
+# it finished. A solo punch is simply a sequence of length one and still reads as one line.
+# Plain Arrays, deliberately not PackedStringArrays: a packed array is a VALUE type in
+# GDScript, so `_pending_punches[key].append(...)` would append to a copy pulled out of the
+# dictionary and the buffer would stay empty. Array is a reference type and mutates in place.
+var _pending_punches := {"f1": [], "f2": []}
+var _pending_at := {"f1": "", "f2": ""}
+
 # The judges' cards are rendered once, on the ENDED payload — guarded in case the final
 # state ever gets delivered twice (e.g. a reconnect)
 var _cards_rendered := false
@@ -164,14 +177,17 @@ func _ready() -> void:
 func _on_tick(payload: Dictionary) -> void:
 	_count_punches("f1", payload["f1"])
 	_count_punches("f2", payload["f2"])
-	_log_punch(payload, "BLUE", payload["f1"])
-	_log_punch(payload, "RED",  payload["f2"])
+	_log_punch(payload, "BLUE", "f1", payload["f1"])
+	_log_punch(payload, "RED",  "f2", payload["f2"])
 	_tally_actions(payload)
 	_tally_clinch(payload)
-	_track_combo("f1", "BLUE", payload)
-	_track_combo("f2", "RED",  payload)
-	_track_combo_length("f1", payload)
-	_track_combo_length("f2", payload)
+	_track_combo("f1", payload)
+	_track_combo("f2", payload)
+	# Runs AFTER _log_punch so an impact tick buffers its punch before the same sequence's
+	# end can flush it — the two never collide, since the impact tick enters RECOVERY and
+	# the flush fires on the later RECOVERY -> READY, but the ordering makes that explicit.
+	_track_combo_length("f1", "BLUE", payload)
+	_track_combo_length("f2", "RED",  payload)
 	# .get() defaults so an older backend payload without round fields still parses.
 	# Two lines on purpose: one long line does not fit the panel and gets clipped.
 	_punch_stats_label.text = "R%s [%s]  BLUE %d/%d — RED %d/%d (landed/thrown)\ncombos BLUE %d — RED %d" % [
@@ -298,25 +314,22 @@ func _count_punches(key: String, f: Dictionary) -> void:
 		if offense["landed"]:
 			_punch_counts[key][1] += 1
 
-# Announces a finished chain in the punch log the moment the depth drops back to zero.
-# .get() default so an older backend payload without comboCount is a permanent no-op.
-func _track_combo(key: String, corner: String, payload: Dictionary) -> void:
+# Counts finished chains (length >= 2) for the running punch-stats label the moment the depth
+# drops back to zero. .get() default so an older backend payload without comboCount is a
+# permanent no-op. It USED to also write its own "combo: N punches" line into the punch log;
+# that is gone, because the grouped entry _flush_punch_group now emits says the same thing in
+# the place the punches themselves appear, instead of as a trailing footnote under them.
+func _track_combo(key: String, payload: Dictionary) -> void:
 	var depth: int = payload[key].get("comboCount", 0)
 	var previous: int = _combo_depth[key]
 	_combo_depth[key] = depth
 	if previous > 0 and depth == 0 and payload.get("status", "") == "ROUND_ACTIVE":
 		_combo_counts[key] += 1
-		_punch_log_lines.insert(0, "[R%s t%d] %s combo: %d punches" % [
-			str(payload.get("roundNumber", 0)), payload["tick"], corner, previous + 1
-		])
-		if _punch_log_lines.size() > MAX_LOG_LINES:
-			_punch_log_lines.resize(MAX_LOG_LINES)
-		_punch_log.text = "\n".join(_punch_log_lines)
 
 # See the class-level comment on _combo_length_counts for why this cannot reuse the
 # comboCount-drop logic above: a solo punch never leaves comboCount at 0, so RECOVERY ->
 # READY is the only signal that fires for every completed sequence, length 1 included.
-func _track_combo_length(key: String, payload: Dictionary) -> void:
+func _track_combo_length(key: String, corner: String, payload: Dictionary) -> void:
 	var f: Dictionary = payload[key]
 	var offense = f.get("offense")
 	if offense != null:
@@ -325,29 +338,70 @@ func _track_combo_length(key: String, payload: Dictionary) -> void:
 	if _previous_phase[key] == "RECOVERY" and phase == "READY" \
 			and payload.get("status", "") == "ROUND_ACTIVE" and _chain_peak_combo[key] >= 0:
 		var length: int = _chain_peak_combo[key] + 1
-		var bucket: String = str(length) if length <= 4 else "5+"
+		var bucket: String = str(length) if length <= 5 else "6+"
 		_combo_length_counts[key][bucket] = _combo_length_counts[key].get(bucket, 0) + 1
 		_chain_peak_combo[key] = -1
+		# The same transition ends the punch log's group — one signal, one owner. It is
+		# deliberately not detected a second time inside the log code, because two places
+		# deciding when a sequence is over would eventually disagree.
+		_flush_punch_group(key, corner)
+	# The bell, a knockdown or a tie-up ends a sequence too. Flush it rather than let it bleed
+	# into the next round's group; the LENGTH tally above still ignores these on purpose, per
+	# the note on _combo_length_counts — a combination the bell cut was never finished.
+	if payload.get("status", "") != "ROUND_ACTIVE":
+		_flush_punch_group(key, corner)
 	_previous_phase[key] = phase
 
-# One clean line per punch, on its impact tick only: round, tick, corner, punch, verdict.
-# On the impact tick the snapshot's action IS the committed punch (the phase machine
-# flips to RECOVERY the same tick the verdict fires).
-func _log_punch(payload: Dictionary, corner: String, f: Dictionary) -> void:
+# Buffers one punch into the sequence currently open, on its impact tick only. On the impact
+# tick the snapshot's action IS the committed punch (the phase machine flips to RECOVERY the
+# same tick the verdict fires). Nothing is written to the log here — the whole sequence is
+# emitted together by _flush_punch_group when it ends.
+func _log_punch(payload: Dictionary, corner: String, key: String, f: Dictionary) -> void:
 	var offense = f.get("offense")
 	if offense == null:
 		return
+	# A chain OPENER arriving while a group is still open means the previous sequence never
+	# saw its RECOVERY -> READY tick — a knockdown or a tie-up cut it short. Close it first,
+	# so two sequences can never be merged into one line.
+	if f.get("comboCount", 0) == 0 and not _pending_punches[key].is_empty():
+		_flush_punch_group(key, corner)
+	if _pending_punches[key].is_empty():
+		_pending_at[key] = "[R%s t%d]" % [str(payload.get("roundNumber", 0)), payload["tick"]]
+	_pending_punches[key].append(_punch_fragment(f))
+
+# One punch's identity and verdict, compact enough that several fit on a combination line.
+func _punch_fragment(f: Dictionary) -> String:
+	var offense = f.get("offense")
 	var verdict: String
 	if offense["landed"]:
-		verdict = "LANDED %.2f dmg" % offense["damage"]
+		verdict = "LANDED %.2f" % offense["damage"]
 		# .get() so an older backend payload without the field still parses
 		if offense.get("knockdown", false):
-			verdict += " — KNOCKDOWN"
+			verdict += " KD"
 	else:
 		verdict = "missed"
-	_punch_log_lines.insert(0, "[R%s t%d] %s %s — %s" % [
-		str(payload.get("roundNumber", 0)), payload["tick"], corner, str(f["action"]), verdict
-	])
+	return "%s %s" % [str(f["action"]), verdict]
+
+# Emits the sequence that just finished as a SINGLE punch-log entry. One punch reads as one
+# line, as it always did; two or more read as one combination carrying a per-punch result —
+# which is the point, because "threw three and missed with all of them" and "failed three
+# separate times" are different things and the log used to show them identically.
+func _flush_punch_group(key: String, corner: String) -> void:
+	var punches: Array = _pending_punches[key]
+	if punches.is_empty():
+		return
+	var line: String
+	if punches.size() == 1:
+		line = "%s %s %s" % [_pending_at[key], corner, punches[0]]
+	else:
+		# join() takes a PackedStringArray, so the buffer is converted at the last moment
+		line = "%s %s %d-PUNCH COMBO: %s" % [
+			_pending_at[key], corner, punches.size(), " · ".join(PackedStringArray(punches))
+		]
+	# Rebind to a FRESH array rather than clearing: `punches` still aliases the old one and
+	# the line above has already been built from it.
+	_pending_punches[key] = []
+	_punch_log_lines.insert(0, line)
 	if _punch_log_lines.size() > MAX_LOG_LINES:
 		_punch_log_lines.resize(MAX_LOG_LINES)
 	_punch_log.text = "\n".join(_punch_log_lines)

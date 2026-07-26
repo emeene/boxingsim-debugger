@@ -17,7 +17,7 @@ extends Control
 # text bleed straight through underneath, which is what made the numbers look like they
 # were fighting each other; that was a rendering bug, not a math one.
 #
-# COMBO LENGTH section (owner request, same day): how many 1/2/3/4/5+-punch sequences each
+# COMBO LENGTH section (owner request, same day): how many 1/2/3/4/5/6+-punch sequences each
 # fighter threw. A separate labeled section, not more ActionType rows — a combo length is a
 # property of a whole punch SEQUENCE, not of any single ActionType, so it does not belong
 # mixed into the rows above.
@@ -51,10 +51,14 @@ const ACTION_ORDER := [
 # rather than "didn't happen this bout."
 const ALWAYS_SHOWN := ["CLINCH"]
 
-# Bucket keys match DebugPanel._track_combo_length's own bucketing exactly ("5+" for
-# anything longer than 4) — labels here are just the display text for each key.
-const COMBO_LENGTH_ORDER := ["1", "2", "3", "4", "5+"]
-const COMBO_LENGTH_LABELS := {"1": "1 (single)", "2": "2", "3": "3", "4": "4", "5+": "5+"}
+# Bucket keys match DebugPanel._track_combo_length's own bucketing exactly ("6+" for
+# anything longer than 5) — labels here are just the display text for each key.
+# The top bucket moved from "5+" to "6+" when the length cap was re-cut (roadmap item 13
+# sub-item 5): the old formula could not produce five punches at ANY tier, so the "5+" row
+# was structurally incapable of being non-zero and said nothing. A Hall-of-Famer now caps at
+# six, so five and six are separate rows worth telling apart.
+const COMBO_LENGTH_ORDER := ["1", "2", "3", "4", "5", "6+"]
+const COMBO_LENGTH_LABELS := {"1": "1 (single)", "2": "2", "3": "3", "4": "4", "5": "5", "6+": "6+"}
 
 const ROW_HEIGHT := 24.0
 # One judge per line, plus a heading — kept tighter than a bar row since it is plain text.
@@ -143,7 +147,7 @@ func _draw() -> void:
 		if blue > 0 or red > 0 or action in ALWAYS_SHOWN:
 			rows.append(action)
 
-	# Combo-length rows always show (0 included) — five fixed buckets, always meaningful
+	# Combo-length rows always show (0 included) — six fixed buckets, always meaningful
 	# to compare, unlike a punch type that may simply never come up in a given bout.
 	var combo_rows: Array = COMBO_LENGTH_ORDER
 
