@@ -185,8 +185,7 @@ func _ready() -> void:
 	var watch_btn := Button.new()
 	watch_btn.text = "Watch Summary"
 	watch_btn.pressed.connect(func():
-		_action_summary.set_data(_action_counts["f1"], _action_counts["f2"], _action_landed["f1"], _action_landed["f2"],
-				_combo_length_counts["f1"], _combo_length_counts["f2"], _running_cards, _defense_data())
+		_push_summary_data()
 		_action_summary.visible = true
 	)
 	$VBoxContainer/HBoxContainer.add_child(watch_btn)
@@ -242,48 +241,20 @@ func _on_tick(payload: Dictionary) -> void:
 		# panel lived on screen only, so a bout you exported and read back afterward had no
 		# punch totals, no combo lengths and no defence numbers anywhere in it. _write_log is a
 		# no-op once the file is closed, so this runs exactly once however many ENDED ticks land.
-		for line in _summary_lines():
+		# The summary control renders its own text, so the file and the screen are one source.
+		_push_summary_data()
+		for line in _action_summary.summary_lines():
 			_write_log(line)
 		_close_log()
 	if _log_lines.size() > MAX_LOG_LINES:
 		_log_lines.resize(MAX_LOG_LINES)
 	tick_log.text = "\n".join(_log_lines)
 
-# The whole summary as plain text, appended to the exported log when the fight ends. It carries
-# the same numbers the "Watch Summary" screen draws, in the same order, so a file read back later
-# and the screen never tell different stories.
-func _summary_lines() -> PackedStringArray:
-	var lines := PackedStringArray(["", "=== FIGHT SUMMARY — ACTIONS EXECUTED ===",
-			"punches show landed/thrown — everything else is total times executed", ""])
-	for action in ActionSummary.ACTION_ORDER:
-		var blue: int = _action_counts["f1"].get(action, 0)
-		var red: int = _action_counts["f2"].get(action, 0)
-		if blue == 0 and red == 0 and not action in ActionSummary.ALWAYS_SHOWN:
-			continue
-		if action in ActionSummary.PUNCH_TYPES:
-			lines.append("%-16s BLUE %d/%d   RED %d/%d" % [action,
-					_action_landed["f1"].get(action, 0), blue,
-					_action_landed["f2"].get(action, 0), red])
-		else:
-			lines.append("%-16s BLUE %d   RED %d" % [action, blue, red])
-	lines.append("")
-	lines.append("COMBO LENGTH (punches per thrown sequence)")
-	for bucket in ActionSummary.COMBO_LENGTH_ORDER:
-		lines.append("%-16s BLUE %d   RED %d" % [bucket,
-				_combo_length_counts["f1"].get(bucket, 0), _combo_length_counts["f2"].get(bucket, 0)])
-	lines.append("")
-	lines.append("DEFENCE (ticks with hands up, out of %d active ticks)" % _cover_up_ticks)
-	for g in ActionSummary.GUARD_ORDER:
-		lines.append("%-16s BLUE %d   RED %d" % [g,
-				_guard_ticks["f1"].get(g, 0), _guard_ticks["f2"].get(g, 0)])
-	lines.append("%-16s BLUE %d/%d   RED %d/%d" % ["COUNTERS",
-			_counter_counts["f1"][1], _counter_counts["f1"][0],
-			_counter_counts["f2"][1], _counter_counts["f2"][0]])
-	var ticks := maxi(_cover_up_ticks, 1)
-	lines.append("COVER-UP DRIVE   BLUE mean %.0f%% peak %.0f%%   RED mean %.0f%% peak %.0f%%" % [
-			_cover_up_sum["f1"] / ticks * 100.0, _cover_up_peak["f1"] * 100.0,
-			_cover_up_sum["f2"] / ticks * 100.0, _cover_up_peak["f2"] * 100.0])
-	return lines
+# Hand the summary control everything tallied so far. Used by the "Watch Summary" button and
+# again at the final bell, when the same numbers are written into the exported log file.
+func _push_summary_data() -> void:
+	_action_summary.set_data(_action_counts["f1"], _action_counts["f2"], _action_landed["f1"], _action_landed["f2"],
+			_combo_length_counts["f1"], _combo_length_counts["f2"], _running_cards, _defense_data())
 
 # Everything the defence section needs, in one bundle: guard time per type, counters
 # landed/thrown, and the cover-up drive as a mean over the fight plus the deepest it ever got.

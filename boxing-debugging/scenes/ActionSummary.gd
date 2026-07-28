@@ -1,8 +1,9 @@
-class_name ActionSummary
 extends Control
-# Named so the row order and the punch/guard groupings below can be read by DebugPanel when it
-# writes the same summary into the exported log file — one definition of what the summary
-# contains, so the screen and the file can never drift apart.
+# Draws the summary AND renders it as text for the exported log (see summary_lines below), so
+# the screen and the file are built from one set of row definitions and can never drift apart.
+# Deliberately NOT given a `class_name`: DebugPanel attaches this script with load() at runtime,
+# so a global name it also referenced at parse time is a cyclic dependency and fails to parse.
+# It calls summary_lines() on the instance instead, which needs no global name.
 #
 # Action breakdown (owner request 2026-07-20), shown on demand via DebugPanel's "Watch
 # Summary" button — a bar chart comparing how many times each fighter executed each
@@ -290,6 +291,48 @@ func _draw() -> void:
 # never disagree about what is actually being rendered.
 func _bar_label(thrown: int, landed: int) -> String:
 	return ("%d/%d" % [landed, thrown]) if landed >= 0 else str(thrown)
+
+# The same summary as plain text, for the exported log file. It reads the same fields _draw
+# reads and walks the same row orders, so a file read back later and the screen on the night
+# cannot tell different stories. Call set_data first — this renders whatever was last handed in.
+func summary_lines() -> PackedStringArray:
+	var lines := PackedStringArray(["", "=== FIGHT SUMMARY — ACTIONS EXECUTED ===",
+			"punches show landed/thrown — everything else is total times executed", ""])
+	for line in _card_lines():
+		lines.append(line)
+	if not _card_lines().is_empty():
+		lines.append("")
+	for action in ACTION_ORDER:
+		var blue: int = _blue_counts.get(action, 0)
+		var red: int = _red_counts.get(action, 0)
+		if blue == 0 and red == 0 and not action in ALWAYS_SHOWN:
+			continue
+		if action in PUNCH_TYPES:
+			lines.append("%-16s BLUE %d/%d   RED %d/%d" % [action,
+					_blue_landed.get(action, 0), blue, _red_landed.get(action, 0), red])
+		else:
+			lines.append("%-16s BLUE %d   RED %d" % [action, blue, red])
+	lines.append("")
+	lines.append("COMBO LENGTH (punches per thrown sequence)")
+	for bucket in COMBO_LENGTH_ORDER:
+		lines.append("%-16s BLUE %d   RED %d" % [COMBO_LENGTH_LABELS[bucket],
+				_blue_combo_lengths.get(bucket, 0), _red_combo_lengths.get(bucket, 0)])
+	if _defense.is_empty():
+		return lines
+	lines.append("")
+	lines.append("DEFENCE (ticks with hands up, out of %d active ticks)" % _defense.get("active_ticks", 0))
+	var guard_ticks: Dictionary = _defense.get("guard_ticks", {})
+	for g in GUARD_ORDER:
+		lines.append("%-16s BLUE %d   RED %d" % [g,
+				guard_ticks.get("f1", {}).get(g, 0), guard_ticks.get("f2", {}).get(g, 0)])
+	var counters: Dictionary = _defense.get("counters", {"f1": [0, 0], "f2": [0, 0]})
+	lines.append("%-16s BLUE %d/%d   RED %d/%d" % ["COUNTERS",
+			counters["f1"][1], counters["f1"][0], counters["f2"][1], counters["f2"][0]])
+	var mean: Dictionary = _defense.get("cover_up_mean", {"f1": 0.0, "f2": 0.0})
+	var peak: Dictionary = _defense.get("cover_up_peak", {"f1": 0.0, "f2": 0.0})
+	lines.append("COVER-UP DRIVE   BLUE mean %.0f%% peak %.0f%%   RED mean %.0f%% peak %.0f%%" % [
+			mean["f1"] * 100.0, peak["f1"] * 100.0, mean["f2"] * 100.0, peak["f2"] * 100.0])
+	return lines
 
 func _label_width(text: String) -> float:
 	return ThemeDB.fallback_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, LABEL_FONT_SIZE).x
