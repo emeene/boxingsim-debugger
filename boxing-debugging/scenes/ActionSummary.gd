@@ -311,7 +311,13 @@ func _draw() -> void:
 	# to cover up in the first place. Kept apart from the action rows on purpose: mixing a tick
 	# count into a list of decision counts is how the two get compared by eye and misread.
 	var defense_y := section_y + 24.0 + combo_rows.size() * ROW_HEIGHT + 16.0
-	draw_string(ThemeDB.fallback_font, Vector2(origin.x, defense_y), "DEFENCE (ticks with hands up)",
+	# NOT "hands up" — that label was wrong and sent the owner chasing a number that meant
+	# something else. `guard` is the defence committed against ONE specific incoming punch and it
+	# dies with that punch, so these are ticks spent picking a shot off, a couple of hundred in a
+	# fight. The posture a man carries the REST of the time is the standing guard, and it has no
+	# tick count because it is never off — its strength is the cover-up figure below.
+	draw_string(ThemeDB.fallback_font, Vector2(origin.x, defense_y),
+			"PICKING SHOTS OFF (ticks committed against a specific punch)",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color.WHITE)
 	var guard_ticks: Dictionary = _defense.get("guard_ticks", {})
 	for i in range(GUARD_ORDER.size()):
@@ -388,7 +394,8 @@ func summary_lines() -> PackedStringArray:
 	if _defense.is_empty():
 		return lines
 	lines.append("")
-	lines.append("DEFENCE (ticks with hands up, out of %d active ticks)" % _defense.get("active_ticks", 0))
+	lines.append("PICKING SHOTS OFF (ticks committed against a specific punch, of %d active)"
+			% _defense.get("active_ticks", 0))
 	var guard_ticks: Dictionary = _defense.get("guard_ticks", {})
 	for g in GUARD_ORDER:
 		lines.append("%-16s BLUE %d   RED %d" % [g,
