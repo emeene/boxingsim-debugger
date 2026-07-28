@@ -1,0 +1,10 @@
+# Exported fight logs. One is written every time a bout is watched, they run to hundreds of
+# kilobytes each, and they are regenerable by watching another fight — so they are output, not
+# source, and do not belong in the history. Delete the ignore line if a specific bout is ever
+# worth keeping as evidence.
+*-HALL_OF_FAMER-*.txt
+*-WORLD_CLASS-*.txt
+*-ELITE-*.txt
+*-GOOD-*.txt
+*-PRO-*.txt
+*-AMATEUR-*.txt
