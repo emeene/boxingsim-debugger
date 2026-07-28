@@ -49,6 +49,18 @@ var _opponent_read: float = -1.0
 # there is nothing to hide. Drawn as a small open ring rather than a flash, because at
 # twenty-odd a round a flash would strobe the whole fight.
 var _probing: bool = false
+# How much this man wants his hands up, 0..1 (CoverUpSensor.drive on the backend): 0 fresh,
+# climbing as he is hurt and worn down, scaled by how smart he is. This is a POSTURE, not an
+# action — it is the difference between a man boxing behind a high guard all round and one
+# with his hands at his waist, and on two circles it was previously impossible to see at all.
+# Drawn as a shell: a thick dim arc across the front that thickens as the drive climbs, held
+# for as long as he is in trouble rather than flashing per tick. -1 on an older payload.
+var _cover_up: float = -1.0
+# The opening a clean piece of defence just bought, in ticks remaining (0 when closed). He made
+# the other man miss and for a moment his own punch is the one that wants to come out. Drawn as
+# a bright gold ring because it is RARE and short — four ticks — and it is the exact instant a
+# counter is about to happen, so it must be loud enough to catch on screen.
+var _counter_window: int = 0
 
 func _draw() -> void:
 	# Fallen pose (hurt cycle): a downed man draws as a darkened, squashed shape lying on
@@ -77,13 +89,32 @@ func _draw() -> void:
 	# solid cyan for BLOCK, a side arc for a slip on the side the head moves to. Guards
 	# only appear during the rival's windup, so a flash of cyan against a yellow rival
 	# reads as "he saw it coming".
+	# The shell is drawn UNDER the committed guard, so a man who is turtling all round shows a
+	# permanent thick band and his individual guards still flash cyan on top of it. Dim slate so
+	# it never competes with the guard itself: the posture is the background, the guard is the
+	# event. It only appears once he is meaningfully in trouble — a fresh fighter has a drive
+	# near zero and drawing that would put a band on everybody all night and mean nothing.
+	if _cover_up > 0.15:
+		var shell_color := Color(0.45, 0.62, 0.72, clampf(_cover_up, 0.0, 1.0))
+		draw_arc(Vector2.ZERO, RADIUS + 1.5, PI * 1.15, PI * 1.85, 16, shell_color, 2.0 + 4.0 * _cover_up)
 	match _guard:
 		"BLOCK":
+			# Hands up: the full ring plus two short gloves across the front, so a block reads
+			# as a shape a person recognises rather than one more coloured outline.
 			draw_arc(Vector2.ZERO, RADIUS + 3.0, 0.0, TAU, 32, Color.CYAN, 2.5)
+			draw_arc(Vector2.ZERO, RADIUS + 6.5, PI * 1.12, PI * 1.42, 8, Color.CYAN, 3.5)
+			draw_arc(Vector2.ZERO, RADIUS + 6.5, PI * 1.58, PI * 1.88, 8, Color.CYAN, 3.5)
 		"SLIP_LEFT":
 			draw_arc(Vector2.ZERO, RADIUS + 3.0, PI * 0.5, PI * 1.5, 16, Color.CYAN, 2.5)
 		"SLIP_RIGHT":
 			draw_arc(Vector2.ZERO, RADIUS + 3.0, -PI * 0.5, PI * 0.5, 16, Color.CYAN, 2.5)
+	# The counter opening: he just made the other man miss and has a few ticks in which his own
+	# punch is favoured. Gold, outside every other ring, so "he slipped it — here it comes" is
+	# one unmistakable read. Fades as the window runs down.
+	if _counter_window > 0:
+		var counter_color := Color(1.0, 0.84, 0.0)
+		counter_color.a = clampf(_counter_window / 4.0, 0.25, 1.0)
+		draw_arc(Vector2.ZERO, RADIUS + 12.0, 0.0, TAU, 32, counter_color, 2.0)
 	# Cornered ring: orange outline just outside the guard ring, so both can show at once —
 	# a cornered man throwing up a guard is exactly the situation worth seeing.
 	if _cornered:
@@ -135,12 +166,20 @@ func _draw_bars() -> void:
 		var read_origin := stamina_origin + Vector2(0.0, (BAR_HEIGHT + 1.0) + 4.0)
 		draw_rect(Rect2(read_origin, Vector2(BAR_WIDTH, 3.0)), Color(0.15, 0.15, 0.15))
 		draw_rect(Rect2(read_origin, Vector2(BAR_WIDTH * _opponent_read, 3.0)), Color(0.72, 0.45, 1.0))
+	# Cover-up bar: how much he wants his hands up. Same slate as the shell arc on the body, so
+	# the bar and the posture are obviously the same channel. It is the only bar here that
+	# should RISE as a man does worse, which is the read — health falling while this climbs is
+	# a fighter going into his shell, and that is the whole behaviour in one picture.
+	if _cover_up >= 0.0:
+		var cover_origin := stamina_origin + Vector2(0.0, (BAR_HEIGHT + 1.0) + 8.0)
+		draw_rect(Rect2(cover_origin, Vector2(BAR_WIDTH, 3.0)), Color(0.15, 0.15, 0.15))
+		draw_rect(Rect2(cover_origin, Vector2(BAR_WIDTH * clampf(_cover_up, 0.0, 1.0), 3.0)), Color(0.45, 0.62, 0.72))
 
 func _process(delta: float) -> void:
 	position = position.lerp(_target_position, delta / 0.1)
 	queue_redraw()
 
-func update_from_snapshot(x: float, y: float, health: float, stamina: float, phase: String, guard = null, feinted: bool = false, downed: bool = false, stagger: float = 0.0, morale: float = -1.0, opponent_read: float = -1.0, action: String = "") -> void:
+func update_from_snapshot(x: float, y: float, health: float, stamina: float, phase: String, guard = null, feinted: bool = false, downed: bool = false, stagger: float = 0.0, morale: float = -1.0, opponent_read: float = -1.0, action: String = "", cover_up: float = -1.0, counter_window: int = 0) -> void:
 	_target_position = MatchState.to_screen(x, y)
 	_health_fraction = clampf(health / 100.0, 0.0, 1.0)
 	_stamina_fraction = clampf(stamina / 100.0, 0.0, 1.0)
@@ -155,6 +194,8 @@ func update_from_snapshot(x: float, y: float, health: float, stamina: float, pha
 	# high speed is a few milliseconds — that is fine here precisely because the mark is
 	# quiet: it reads as a flicker on the lead side, the way real probing looks.
 	_probing = action == "FAKE" and phase == "STARTUP"
+	_cover_up = cover_up
+	_counter_window = counter_window
 	if feinted:
 		_feint_flash_until_ms = Time.get_ticks_msec() + FEINT_FLASH_MS
 

@@ -99,6 +99,23 @@ var _action_counts := {"f1": {}, "f2": {}}
 var _action_landed := {"f1": {}, "f2": {}}
 var _previous_action := {"f1": "", "f2": ""}
 var _was_active := false
+# GUARD TIME, counted separately from the chosen-a-defence counts above and for a reason worth
+# stating. The action rows answer "how many times did he decide to block", which is a decision
+# count and undercounts badly — the edge-triggered rule treats movement as transparent, so a man
+# who blocks, steps, blocks again reads as ONE guard. These count every tick his hands were
+# actually up, off the payload's `guard` field, which is the thing the ring draws and the thing
+# CombatManager actually resolves a punch against. The two numbers answer different questions and
+# both belong on screen: how often he chose it, and how long he held it.
+var _guard_ticks := {"f1": {}, "f2": {}}
+# Counters thrown and landed, off the verdict's `counter` flag. A counter is broadcast as an
+# ordinary JAB or CROSS, so without this the whole counter-punching feature is invisible in a
+# summary that already lists every punch type.
+var _counter_counts := {"f1": [0, 0], "f2": [0, 0]}
+# The cover-up drive, averaged over the active ticks of the fight and held at its peak. A mean
+# says whether this man spent the night in his shell; the peak says how deep he ever went.
+var _cover_up_sum := {"f1": 0.0, "f2": 0.0}
+var _cover_up_peak := {"f1": 0.0, "f2": 0.0}
+var _cover_up_ticks := 0
 # A tie-up suspends both brains and runs under its own CLINCH match status, so the action
 # field can't edge-trigger a clinch the way it does the other held states. Instead we count one
 # CLINCH for each man the moment the status FIRST turns CLINCH — one per tie-up, matching the
@@ -169,7 +186,7 @@ func _ready() -> void:
 	watch_btn.text = "Watch Summary"
 	watch_btn.pressed.connect(func():
 		_action_summary.set_data(_action_counts["f1"], _action_counts["f2"], _action_landed["f1"], _action_landed["f2"],
-				_combo_length_counts["f1"], _combo_length_counts["f2"], _running_cards)
+				_combo_length_counts["f1"], _combo_length_counts["f2"], _running_cards, _defense_data())
 		_action_summary.visible = true
 	)
 	$VBoxContainer/HBoxContainer.add_child(watch_btn)
@@ -221,10 +238,66 @@ func _on_tick(payload: Dictionary) -> void:
 		for card_line in block:
 			_write_log(card_line)
 	if payload.get("status", "") == "ENDED":
+		# The file used to end on the last tick line and nothing else: every aggregate in this
+		# panel lived on screen only, so a bout you exported and read back afterward had no
+		# punch totals, no combo lengths and no defence numbers anywhere in it. _write_log is a
+		# no-op once the file is closed, so this runs exactly once however many ENDED ticks land.
+		for line in _summary_lines():
+			_write_log(line)
 		_close_log()
 	if _log_lines.size() > MAX_LOG_LINES:
 		_log_lines.resize(MAX_LOG_LINES)
 	tick_log.text = "\n".join(_log_lines)
+
+# The whole summary as plain text, appended to the exported log when the fight ends. It carries
+# the same numbers the "Watch Summary" screen draws, in the same order, so a file read back later
+# and the screen never tell different stories.
+func _summary_lines() -> PackedStringArray:
+	var lines := PackedStringArray(["", "=== FIGHT SUMMARY — ACTIONS EXECUTED ===",
+			"punches show landed/thrown — everything else is total times executed", ""])
+	for action in ActionSummary.ACTION_ORDER:
+		var blue: int = _action_counts["f1"].get(action, 0)
+		var red: int = _action_counts["f2"].get(action, 0)
+		if blue == 0 and red == 0 and not action in ActionSummary.ALWAYS_SHOWN:
+			continue
+		if action in ActionSummary.PUNCH_TYPES:
+			lines.append("%-16s BLUE %d/%d   RED %d/%d" % [action,
+					_action_landed["f1"].get(action, 0), blue,
+					_action_landed["f2"].get(action, 0), red])
+		else:
+			lines.append("%-16s BLUE %d   RED %d" % [action, blue, red])
+	lines.append("")
+	lines.append("COMBO LENGTH (punches per thrown sequence)")
+	for bucket in ActionSummary.COMBO_LENGTH_ORDER:
+		lines.append("%-16s BLUE %d   RED %d" % [bucket,
+				_combo_length_counts["f1"].get(bucket, 0), _combo_length_counts["f2"].get(bucket, 0)])
+	lines.append("")
+	lines.append("DEFENCE (ticks with hands up, out of %d active ticks)" % _cover_up_ticks)
+	for g in ActionSummary.GUARD_ORDER:
+		lines.append("%-16s BLUE %d   RED %d" % [g,
+				_guard_ticks["f1"].get(g, 0), _guard_ticks["f2"].get(g, 0)])
+	lines.append("%-16s BLUE %d/%d   RED %d/%d" % ["COUNTERS",
+			_counter_counts["f1"][1], _counter_counts["f1"][0],
+			_counter_counts["f2"][1], _counter_counts["f2"][0]])
+	var ticks := maxi(_cover_up_ticks, 1)
+	lines.append("COVER-UP DRIVE   BLUE mean %.0f%% peak %.0f%%   RED mean %.0f%% peak %.0f%%" % [
+			_cover_up_sum["f1"] / ticks * 100.0, _cover_up_peak["f1"] * 100.0,
+			_cover_up_sum["f2"] / ticks * 100.0, _cover_up_peak["f2"] * 100.0])
+	return lines
+
+# Everything the defence section needs, in one bundle: guard time per type, counters
+# landed/thrown, and the cover-up drive as a mean over the fight plus the deepest it ever got.
+# The mean divides by the active tick count, so it reads as "the share of the fight he spent
+# wanting his hands up" rather than a raw sum nobody can scale.
+func _defense_data() -> Dictionary:
+	var ticks := maxi(_cover_up_ticks, 1)
+	return {
+		"guard_ticks": _guard_ticks,
+		"counters": _counter_counts,
+		"cover_up_mean": {"f1": _cover_up_sum["f1"] / ticks, "f2": _cover_up_sum["f2"] / ticks},
+		"cover_up_peak": _cover_up_peak,
+		"active_ticks": _cover_up_ticks,
+	}
 
 # Count one CLINCH for each man the instant a tie-up begins — see _was_clinched.
 func _tally_clinch(payload: Dictionary) -> void:
@@ -270,6 +343,27 @@ func _tally_actions(payload: Dictionary) -> void:
 		return
 	_tally_one("f1", payload["f1"])
 	_tally_one("f2", payload["f2"])
+	_tally_defense("f1", payload["f1"])
+	_tally_defense("f2", payload["f2"])
+	_cover_up_ticks += 1
+
+# Guard time, counters and the cover-up drive — the three things about defence that the action
+# rows structurally cannot carry. Runs only on active ticks, like every other tally here.
+func _tally_defense(key: String, f: Dictionary) -> void:
+	var guard = f.get("guard")
+	if guard != null:
+		var g: String = str(guard)
+		_guard_ticks[key][g] = _guard_ticks[key].get(g, 0) + 1
+	var offense = f.get("offense")
+	if offense != null and offense.get("counter", false):
+		_counter_counts[key][0] += 1
+		if offense["landed"]:
+			_counter_counts[key][1] += 1
+	# -1 is an older backend with no cover-up field; it must not drag the mean toward zero.
+	var cover: float = f.get("coverUp", -1.0)
+	if cover >= 0.0:
+		_cover_up_sum[key] += cover
+		_cover_up_peak[key] = maxf(_cover_up_peak[key], cover)
 
 func _tally_one(key: String, f: Dictionary) -> void:
 	var offense = f.get("offense")

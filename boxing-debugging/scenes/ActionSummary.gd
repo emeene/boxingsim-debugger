@@ -1,4 +1,9 @@
+class_name ActionSummary
 extends Control
+# Named so the row order and the punch/guard groupings below can be read by DebugPanel when it
+# writes the same summary into the exported log file — one definition of what the summary
+# contains, so the screen and the file can never drift apart.
+#
 # Action breakdown (owner request 2026-07-20), shown on demand via DebugPanel's "Watch
 # Summary" button — a bar chart comparing how many times each fighter executed each
 # ActionType, EXCEPT movement (owner ruling, "everything bar movement": the ring view
@@ -49,7 +54,15 @@ const ACTION_ORDER := [
 # Action rows that show even at a zero count. The rebuilt grab decision is worth pinning
 # visible — it can be rare in a technical fight, and a hidden zero reads as "never implemented"
 # rather than "didn't happen this bout."
-const ALWAYS_SHOWN := ["CLINCH"]
+#
+# The three defensive rows are pinned for exactly that reason and it was not hypothetical: a
+# fighter who never got his hands up produced no rows at all, so the summary looked identical
+# whether the defence was working, switched off by a rounding bug, or never built. A zero has to
+# be visible as a zero — it is the single most important number on this screen when something is
+# wrong, and hiding it is how a fighter defending himself 0.00% of the time went unnoticed.
+const ALWAYS_SHOWN := ["CLINCH", "BLOCK", "SLIP_LEFT", "SLIP_RIGHT"]
+# The defence section's own rows — guard TIME, not decisions. See DebugPanel._guard_ticks.
+const GUARD_ORDER := ["BLOCK", "SLIP_LEFT", "SLIP_RIGHT"]
 
 # Bucket keys match DebugPanel._track_combo_length's own bucketing exactly ("6+" for
 # anything longer than 5) — labels here are just the display text for each key.
@@ -86,11 +99,16 @@ var _red_combo_lengths: Dictionary = {}
 # there is genuinely nothing to score, and still populated after a knockout — where the fight
 # has no official card but "where it stood on points" is exactly what you want to know.
 var _cards = null
+# Guard time, counters and the cover-up drive — see DebugPanel._defense_data. Empty until a
+# backend that sends the fields has been connected, in which case the section is skipped
+# entirely rather than drawn as a block of zeroes that would read as "the defence is dead".
+var _defense: Dictionary = {}
 
 # Called every time "Watch Summary" is pressed — DebugPanel hands over whatever it has
 # tallied so far, live mid-fight or final once the fight has ended.
 func set_data(blue_counts: Dictionary, red_counts: Dictionary, blue_landed: Dictionary, red_landed: Dictionary,
-		blue_combo_lengths: Dictionary, red_combo_lengths: Dictionary, cards = null) -> void:
+		blue_combo_lengths: Dictionary, red_combo_lengths: Dictionary, cards = null, defense: Dictionary = {}) -> void:
+	_defense = defense
 	_blue_counts = blue_counts
 	_red_counts = red_counts
 	_blue_landed = blue_landed
@@ -160,7 +178,12 @@ func _draw() -> void:
 	if not card_lines.is_empty():
 		card_block_h = 12.0 + card_lines.size() * CARD_LINE_HEIGHT
 
-	var content_height := 90.0 + card_block_h + rows.size() * ROW_HEIGHT + 40.0 + combo_rows.size() * ROW_HEIGHT
+	# Guard rows + the counter row + two cover-up text lines, plus the heading and its gap.
+	var defense_block_h := 0.0
+	if not _defense.is_empty():
+		defense_block_h = 40.0 + (GUARD_ORDER.size() + 1) * ROW_HEIGHT + 2.0 * CARD_LINE_HEIGHT
+
+	var content_height := 90.0 + card_block_h + rows.size() * ROW_HEIGHT + 40.0 + combo_rows.size() * ROW_HEIGHT + defense_block_h
 	var origin := Vector2(viewport_size.x / 2.0 - 340.0, (viewport_size.y - content_height) / 2.0)
 
 	draw_string(ThemeDB.fallback_font, origin + Vector2(0.0, 0.0), "FIGHT SUMMARY — ACTIONS EXECUTED",
@@ -217,6 +240,51 @@ func _draw() -> void:
 		_draw_bar(bar_x, y, blue, -1, max_count, BLUE_COLOR, BLUE_LANDED_COLOR)
 		_draw_bar(red_bar_x, y, red, -1, max_count, RED_COLOR, RED_LANDED_COLOR)
 
+	if _defense.is_empty():
+		return
+	# DEFENCE section. Everything above counts DECISIONS; this counts what actually happened —
+	# how long the hands were up, how many counters came out of it, and how much the man wanted
+	# to cover up in the first place. Kept apart from the action rows on purpose: mixing a tick
+	# count into a list of decision counts is how the two get compared by eye and misread.
+	var defense_y := section_y + 24.0 + combo_rows.size() * ROW_HEIGHT + 16.0
+	draw_string(ThemeDB.fallback_font, Vector2(origin.x, defense_y), "DEFENCE (ticks with hands up)",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color.WHITE)
+	var guard_ticks: Dictionary = _defense.get("guard_ticks", {})
+	for i in range(GUARD_ORDER.size()):
+		var g: String = GUARD_ORDER[i]
+		var blue: int = guard_ticks.get("f1", {}).get(g, 0)
+		var red: int = guard_ticks.get("f2", {}).get(g, 0)
+		var y := defense_y + 24.0 + i * ROW_HEIGHT
+		draw_string(ThemeDB.fallback_font, Vector2(origin.x, y + 14.0), g,
+				HORIZONTAL_ALIGNMENT_LEFT, LABEL_WIDTH, 14, Color.WHITE_SMOKE)
+		var max_count: int = maxi(maxi(blue, red), 1)
+		_draw_bar(bar_x, y, blue, -1, max_count, BLUE_COLOR, BLUE_LANDED_COLOR)
+		_draw_bar(red_bar_x, y, red, -1, max_count, RED_COLOR, RED_LANDED_COLOR)
+
+	# Counters get the punch treatment (landed/thrown) because that is what they are: a punch
+	# thrown inside the opening a block or a slip just bought.
+	var counters: Dictionary = _defense.get("counters", {"f1": [0, 0], "f2": [0, 0]})
+	var counter_y := defense_y + 24.0 + GUARD_ORDER.size() * ROW_HEIGHT
+	draw_string(ThemeDB.fallback_font, Vector2(origin.x, counter_y + 14.0), "COUNTERS",
+			HORIZONTAL_ALIGNMENT_LEFT, LABEL_WIDTH, 14, Color.WHITE_SMOKE)
+	var blue_counter: Array = counters["f1"]
+	var red_counter: Array = counters["f2"]
+	var counter_max: int = maxi(maxi(blue_counter[0], red_counter[0]), 1)
+	_draw_bar(bar_x, counter_y, blue_counter[0], blue_counter[1], counter_max, BLUE_COLOR, BLUE_LANDED_COLOR)
+	_draw_bar(red_bar_x, counter_y, red_counter[0], red_counter[1], counter_max, RED_COLOR, RED_LANDED_COLOR)
+
+	# The drive itself, as text rather than a bar — it is a 0-to-1 average, not a count, and
+	# putting it on the same bar scale as a tick total would invite exactly the wrong comparison.
+	var mean: Dictionary = _defense.get("cover_up_mean", {"f1": 0.0, "f2": 0.0})
+	var peak: Dictionary = _defense.get("cover_up_peak", {"f1": 0.0, "f2": 0.0})
+	var drive_y := counter_y + ROW_HEIGHT + 14.0
+	draw_string(ThemeDB.fallback_font, Vector2(origin.x, drive_y),
+			"COVER-UP DRIVE   BLUE mean %.0f%%  peak %.0f%%" % [mean["f1"] * 100.0, peak["f1"] * 100.0],
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, BLUE_COLOR)
+	draw_string(ThemeDB.fallback_font, Vector2(origin.x, drive_y + CARD_LINE_HEIGHT),
+			"                 RED  mean %.0f%%  peak %.0f%%" % [mean["f2"] * 100.0, peak["f2"] * 100.0],
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, RED_COLOR)
+
 # The text a bar prints next to itself — "landed/thrown" for a punch row, a bare count
 # otherwise. Shared between the drawing pass and the width measurement so the two can
 # never disagree about what is actually being rendered.
@@ -226,10 +294,13 @@ func _bar_label(thrown: int, landed: int) -> String:
 func _label_width(text: String) -> float:
 	return ThemeDB.fallback_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, LABEL_FONT_SIZE).x
 
-# Widest blue label across every row this draw will render, action rows and combo-length
-# rows together — the single shared offset every row's red column starts at, so the
-# column reads as one straight aligned bar chart instead of drifting row to row while
+# Widest blue label across every row this draw will render — action rows, combo-length rows
+# and the defence rows together — the single shared offset every row's red column starts at, so
+# the column reads as one straight aligned bar chart instead of drifting row to row while
 # still being guaranteed wide enough for the actual longest label, not a guessed constant.
+# The defence rows MUST be in here: they hold guard-time tick counts, which run into four
+# figures where a punch count stays in three, so leaving them out would put the widest label on
+# the whole screen underneath the red column and repeat the overlap bug fixed in July.
 func _widest_blue_label(rows: Array, combo_rows: Array) -> float:
 	var widest := 0.0
 	for action in rows:
@@ -239,6 +310,12 @@ func _widest_blue_label(rows: Array, combo_rows: Array) -> float:
 		widest = maxf(widest, _label_width(_bar_label(blue, landed)))
 	for bucket in combo_rows:
 		widest = maxf(widest, _label_width(_bar_label(_blue_combo_lengths.get(bucket, 0), -1)))
+	if not _defense.is_empty():
+		var guard_ticks: Dictionary = _defense.get("guard_ticks", {})
+		for g in GUARD_ORDER:
+			widest = maxf(widest, _label_width(_bar_label(guard_ticks.get("f1", {}).get(g, 0), -1)))
+		var blue_counter: Array = _defense.get("counters", {"f1": [0, 0]})["f1"]
+		widest = maxf(widest, _label_width(_bar_label(blue_counter[0], blue_counter[1])))
 	return widest
 
 # landed == -1 means "no landed concept for this action" (draws a plain bar + bare count).
