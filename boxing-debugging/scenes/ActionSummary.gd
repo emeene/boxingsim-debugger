@@ -182,7 +182,8 @@ func _draw() -> void:
 	# Guard rows + the counter row + two cover-up text lines, plus the heading and its gap.
 	var defense_block_h := 0.0
 	if not _defense.is_empty():
-		defense_block_h = 40.0 + (GUARD_ORDER.size() + 1) * ROW_HEIGHT + 2.0 * CARD_LINE_HEIGHT
+		# Guard rows, the counter row, then three lines of cover-up: its heading and one per corner.
+		defense_block_h = 44.0 + (GUARD_ORDER.size() + 1) * ROW_HEIGHT + 3.0 * CARD_LINE_HEIGHT
 
 	var content_height := 90.0 + card_block_h + rows.size() * ROW_HEIGHT + 40.0 + combo_rows.size() * ROW_HEIGHT + defense_block_h
 	var origin := Vector2(viewport_size.x / 2.0 - 340.0, (viewport_size.y - content_height) / 2.0)
@@ -276,14 +277,19 @@ func _draw() -> void:
 
 	# The drive itself, as text rather than a bar — it is a 0-to-1 average, not a count, and
 	# putting it on the same bar scale as a tick total would invite exactly the wrong comparison.
+	# It carries its own sentence of explanation because the bare number is unreadable: "0%" tells
+	# a viewer nothing about what is being measured or which direction is bad.
 	var mean: Dictionary = _defense.get("cover_up_mean", {"f1": 0.0, "f2": 0.0})
 	var peak: Dictionary = _defense.get("cover_up_peak", {"f1": 0.0, "f2": 0.0})
 	var drive_y := counter_y + ROW_HEIGHT + 14.0
 	draw_string(ThemeDB.fallback_font, Vector2(origin.x, drive_y),
-			"COVER-UP DRIVE   BLUE mean %.0f%%  peak %.0f%%" % [mean["f1"] * 100.0, peak["f1"] * 100.0],
+			"WANTS HIS HANDS UP — 0% = unhurt, 100% = a smart man in deep trouble",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color.WHITE)
+	draw_string(ThemeDB.fallback_font, Vector2(origin.x, drive_y + CARD_LINE_HEIGHT + 4.0),
+			"BLUE  average over the fight %.0f%%   worst moment %.0f%%" % [mean["f1"] * 100.0, peak["f1"] * 100.0],
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, BLUE_COLOR)
-	draw_string(ThemeDB.fallback_font, Vector2(origin.x, drive_y + CARD_LINE_HEIGHT),
-			"                 RED  mean %.0f%%  peak %.0f%%" % [mean["f2"] * 100.0, peak["f2"] * 100.0],
+	draw_string(ThemeDB.fallback_font, Vector2(origin.x, drive_y + 2.0 * CARD_LINE_HEIGHT + 4.0),
+			"RED   average over the fight %.0f%%   worst moment %.0f%%" % [mean["f2"] * 100.0, peak["f2"] * 100.0],
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, RED_COLOR)
 
 # The text a bar prints next to itself — "landed/thrown" for a punch row, a bare count
@@ -330,7 +336,8 @@ func summary_lines() -> PackedStringArray:
 			counters["f1"][1], counters["f1"][0], counters["f2"][1], counters["f2"][0]])
 	var mean: Dictionary = _defense.get("cover_up_mean", {"f1": 0.0, "f2": 0.0})
 	var peak: Dictionary = _defense.get("cover_up_peak", {"f1": 0.0, "f2": 0.0})
-	lines.append("COVER-UP DRIVE   BLUE mean %.0f%% peak %.0f%%   RED mean %.0f%% peak %.0f%%" % [
+	lines.append("WANTS HIS HANDS UP — 0% = unhurt, 100% = a smart man in deep trouble")
+	lines.append("%-16s BLUE average %.0f%% worst %.0f%%   RED average %.0f%% worst %.0f%%" % ["COVER-UP",
 			mean["f1"] * 100.0, peak["f1"] * 100.0, mean["f2"] * 100.0, peak["f2"] * 100.0])
 	return lines
 
