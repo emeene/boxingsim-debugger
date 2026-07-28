@@ -75,6 +75,11 @@ const COMBO_LENGTH_ORDER := ["1", "2", "3", "4", "5", "6+"]
 const COMBO_LENGTH_LABELS := {"1": "1 (single)", "2": "2", "3": "3", "4": "4", "5": "5", "6+": "6+"}
 
 const ROW_HEIGHT := 24.0
+# Gap kept above and below the content once it is tall enough to scroll.
+const TOP_MARGIN := 24.0
+# One wheel notch. Two rows at a time — enough to get through the list quickly, small enough
+# that a row never jumps past you.
+const SCROLL_STEP := 48.0
 # One judge per line, plus a heading — kept tighter than a bar row since it is plain text.
 const CARD_LINE_HEIGHT := 18.0
 const BAR_MAX_WIDTH := 220.0
@@ -104,6 +109,51 @@ var _cards = null
 # backend that sends the fields has been connected, in which case the section is skipped
 # entirely rather than drawn as a block of zeroes that would read as "the defence is dead".
 var _defense: Dictionary = {}
+# Scroll position in pixels from the top of the content, and how far it is allowed to go —
+# recomputed every draw from the real content height, so adding a section can never leave the
+# limit stale. Mouse wheel, arrow keys, page keys and home/end all drive it (see _input).
+var _scroll: float = 0.0
+var _max_scroll: float = 0.0
+
+# Scrolling input. Handled in _input rather than _gui_input on purpose: this control is created
+# in code with MOUSE_FILTER_IGNORE so it never steals clicks from the ring underneath, which also
+# means it receives no GUI events at all. _input sees everything, so the guard on `visible` is
+# what keeps the summary from eating the wheel while the fight is on screen. Events are only
+# marked handled when they actually moved something.
+func _input(event: InputEvent) -> void:
+	if not visible or _max_scroll <= 0.0:
+		return
+	var before := _scroll
+	if event is InputEventMouseButton and event.pressed:
+		match event.button_index:
+			MOUSE_BUTTON_WHEEL_UP:   _scroll -= SCROLL_STEP
+			MOUSE_BUTTON_WHEEL_DOWN: _scroll += SCROLL_STEP
+	elif event is InputEventKey and event.pressed:
+		match event.keycode:
+			KEY_UP:       _scroll -= SCROLL_STEP
+			KEY_DOWN:     _scroll += SCROLL_STEP
+			KEY_PAGEUP:   _scroll -= get_viewport_rect().size.y * 0.8
+			KEY_PAGEDOWN: _scroll += get_viewport_rect().size.y * 0.8
+			KEY_HOME:     _scroll = 0.0
+			KEY_END:      _scroll = _max_scroll
+	_scroll = clampf(_scroll, 0.0, _max_scroll)
+	if _scroll != before:
+		get_viewport().set_input_as_handled()
+		queue_redraw()
+
+# A plain track and thumb down the right edge, drawn only when there is something to scroll to.
+# Without it the summary looks complete at whatever row happens to reach the bottom of the window,
+# which is the failure this whole change exists to fix — a section you cannot see reads as a
+# section that was never built.
+func _draw_scrollbar(viewport_size: Vector2, content_height: float) -> void:
+	if _max_scroll <= 0.0:
+		return
+	var track_x := viewport_size.x - 14.0
+	var track_h := viewport_size.y - 2.0 * TOP_MARGIN
+	draw_rect(Rect2(Vector2(track_x, TOP_MARGIN), Vector2(6.0, track_h)), Color(0.18, 0.18, 0.18))
+	var thumb_h := maxf(32.0, track_h * (viewport_size.y / content_height))
+	var thumb_y := TOP_MARGIN + (track_h - thumb_h) * (_scroll / _max_scroll)
+	draw_rect(Rect2(Vector2(track_x, thumb_y), Vector2(6.0, thumb_h)), Color(0.55, 0.55, 0.55))
 
 # Called every time "Watch Summary" is pressed — DebugPanel hands over whatever it has
 # tallied so far, live mid-fight or final once the fight has ended.
@@ -186,12 +236,24 @@ func _draw() -> void:
 		defense_block_h = 44.0 + (GUARD_ORDER.size() + 1) * ROW_HEIGHT + 3.0 * CARD_LINE_HEIGHT
 
 	var content_height := 90.0 + card_block_h + rows.size() * ROW_HEIGHT + 40.0 + combo_rows.size() * ROW_HEIGHT + defense_block_h
-	var origin := Vector2(viewport_size.x / 2.0 - 340.0, (viewport_size.y - content_height) / 2.0)
+
+	# Scrolling. The summary outgrew the window once the defence section landed, and a block that
+	# runs off the bottom of the screen is the same as a block that was never drawn. When it fits
+	# it stays centred exactly as before; when it does not, it pins to the top and scrolls.
+	_max_scroll = maxf(0.0, content_height + 2.0 * TOP_MARGIN - viewport_size.y)
+	_scroll = clampf(_scroll, 0.0, _max_scroll)
+	var origin_y := (viewport_size.y - content_height) / 2.0 if _max_scroll <= 0.0 else TOP_MARGIN - _scroll
+	var origin := Vector2(viewport_size.x / 2.0 - 340.0, origin_y)
+	# Drawn first, at the far right edge where nothing else reaches, so the early return further
+	# down (no defence data) still leaves the bar on screen.
+	_draw_scrollbar(viewport_size, content_height)
 
 	draw_string(ThemeDB.fallback_font, origin + Vector2(0.0, 0.0), "FIGHT SUMMARY — ACTIONS EXECUTED",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color.WHITE)
-	draw_string(ThemeDB.fallback_font, origin + Vector2(0.0, 22.0),
-			"punches show landed/thrown — everything else is total times executed",
+	var subtitle := "punches show landed/thrown — everything else is total times executed"
+	if _max_scroll > 0.0:
+		subtitle += "   ·   scroll: wheel / arrows / page / home-end"
+	draw_string(ThemeDB.fallback_font, origin + Vector2(0.0, 22.0), subtitle,
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.6, 0.6, 0.6))
 	for i in range(card_lines.size()):
 		# First line is the heading, the three after it are the judges — heading a touch
