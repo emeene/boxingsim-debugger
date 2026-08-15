@@ -443,6 +443,11 @@ func _punch_fragment(f: Dictionary) -> String:
 		# .get() so an older backend payload without the field still parses
 		if offense.get("knockdown", false):
 			verdict += " KD"
+		# Guard-posture-design phase 1: a soft setup punch lands for near nothing on purpose —
+		# without this it reads exactly like a real punch that just happened to whiff on damage.
+		# Matches FightNarrator's own "(soft setup)" wording on the backend CLI side.
+		if offense.get("softSetup", false):
+			verdict += " (soft)"
 	else:
 		verdict = "missed"
 	return "%s %s" % [str(f["action"]), verdict]
@@ -485,6 +490,11 @@ func _fighter_entry(f: Dictionary) -> String:
 			# .get() so an older backend payload without the field still parses
 			if offense.get("knockdown", false):
 				entry += " — KNOCKDOWN"
+			# Guard-posture-design phase 1: same marker as _punch_fragment above, but this is the
+			# function that actually writes to the exported log file — the on-screen combo log
+			# never gets exported, so this is the one that matters for anything persisted.
+			if offense.get("softSetup", false):
+				entry += " — SOFT SETUP"
 		else:
 			entry += " — MISSED"
 	return entry

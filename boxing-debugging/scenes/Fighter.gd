@@ -61,6 +61,13 @@ var _cover_up: float = -1.0
 # a bright gold ring because it is RARE and short — four ticks — and it is the exact instant a
 # counter is about to happen, so it must be loud enough to catch on screen.
 var _counter_window: int = 0
+# Guard tilt (guard-posture-design, phase 1, owner request 2026-08-15): which side of his own
+# guard this man is favouring right now, 0..1, where 0.5 is neutral and drifting toward 0 or 1
+# means covering one side at the cost of the other, not "more guard" the way the bars above are.
+# Fresh mechanic on the backend — a punch landing on the side the guard just leaned away from now
+# genuinely hits harder, not just more often, and a sharp fighter (exploitSkillMult) punishes that
+# opening harder than a crude one does. -1 on an older payload without the field.
+var _guard_bias: float = -1.0
 
 func _draw() -> void:
 	# Fallen pose (hurt cycle): a downed man draws as a darkened, squashed shape lying on
@@ -174,12 +181,27 @@ func _draw_bars() -> void:
 		var cover_origin := stamina_origin + Vector2(0.0, (BAR_HEIGHT + 1.0) + 8.0)
 		draw_rect(Rect2(cover_origin, Vector2(BAR_WIDTH, 3.0)), Color(0.15, 0.15, 0.15))
 		draw_rect(Rect2(cover_origin, Vector2(BAR_WIDTH * clampf(_cover_up, 0.0, 1.0), 3.0)), Color(0.45, 0.62, 0.72))
+	# Guard-bias bar: unlike the three bars above, 0.5 is not "half" — it is NEUTRAL, and moving
+	# toward 0 or 1 both mean something (which side is open), not "more" of the same thing. A
+	# plain left-anchored fill would misread as a quantity climbing, so this one fills from the
+	# bar's own centre outward instead: a neutral guard draws an empty bar, a tilted one visibly
+	# grows from the middle in the direction it leans. Slate blue-violet — every other hue on
+	# this fighter is already spoken for (amber/violet/slate-teal above).
+	if _guard_bias >= 0.0:
+		var bias_origin := stamina_origin + Vector2(0.0, (BAR_HEIGHT + 1.0) + 12.0)
+		draw_rect(Rect2(bias_origin, Vector2(BAR_WIDTH, 3.0)), Color(0.15, 0.15, 0.15))
+		var bias_clamped := clampf(_guard_bias, 0.0, 1.0)
+		var half_width := BAR_WIDTH / 2.0
+		var lean := (bias_clamped - 0.5) * BAR_WIDTH
+		var fill_x := half_width + minf(lean, 0.0)
+		var fill_w := absf(lean)
+		draw_rect(Rect2(bias_origin + Vector2(fill_x, 0.0), Vector2(fill_w, 3.0)), Color(0.55, 0.42, 0.85))
 
 func _process(delta: float) -> void:
 	position = position.lerp(_target_position, delta / 0.1)
 	queue_redraw()
 
-func update_from_snapshot(x: float, y: float, health: float, stamina: float, phase: String, guard = null, feinted: bool = false, downed: bool = false, stagger: float = 0.0, morale: float = -1.0, opponent_read: float = -1.0, action: String = "", cover_up: float = -1.0, counter_window: int = 0) -> void:
+func update_from_snapshot(x: float, y: float, health: float, stamina: float, phase: String, guard = null, feinted: bool = false, downed: bool = false, stagger: float = 0.0, morale: float = -1.0, opponent_read: float = -1.0, action: String = "", cover_up: float = -1.0, counter_window: int = 0, guard_bias: float = -1.0) -> void:
 	_target_position = MatchState.to_screen(x, y)
 	_health_fraction = clampf(health / 100.0, 0.0, 1.0)
 	_stamina_fraction = clampf(stamina / 100.0, 0.0, 1.0)
@@ -196,6 +218,7 @@ func update_from_snapshot(x: float, y: float, health: float, stamina: float, pha
 	_probing = action == "FAKE" and phase == "STARTUP"
 	_cover_up = cover_up
 	_counter_window = counter_window
+	_guard_bias = guard_bias
 	if feinted:
 		_feint_flash_until_ms = Time.get_ticks_msec() + FEINT_FLASH_MS
 
